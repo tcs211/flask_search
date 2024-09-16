@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tungo 文件搜尋引擎</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        [v-cloak] { display: none; }
+        html, body {
+            height: 100%;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+        #app {
+            flex: 1 0 auto;
+        }
+        footer {
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="app" class="container mx-auto px-4 py-8" v-cloak>
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Tungo 文件搜尋引擎</h1>
+            <p class="text-gray-600">快速搜尋您的文件庫</p>
+            <p class="text-gray-600">成功大學人工智慧資訊擷取技術課程作業</p>
+        </header>
+        
+        <div class="mb-8 flex justify-end">
+            <button @click="showUploadModal" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 ease-in-out flex items-center">
+                <i class="fas fa-upload mr-2"></i> 上傳文件
+            </button>
+        </div>
+        
+        <div class="search-section mb-8">
+            <form @submit.prevent="searchDocuments" class="flex"  style="max-width: 600px; margin: 0 auto;">
+                <input 
+                    type="text" 
+                    class="search-input w-2/3 p-2 border border-gray-300 
+                    rounded rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 mb-0 sm:mb-0" 
+                    v-model="searchQuery" 
+                    placeholder="輸入關鍵字" 
+                    required
+                >
+                <button 
+                    type="submit" 
+                    class="search-button w-auto bg-blue-500 hover:bg-blue-600 whitespace-nowrap
+                    text-white font-bold px-4 rounded rounded-l-none transition 
+                    duration-300 ease-in-out"
+                >
+                    <i class="fas fa-search mr-2"></i> 搜尋
+                </button>
+            </form>
+        </div>
+
+        <div v-if="searchResults.length > 0" class="search-results">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">搜尋結果</h2>
+            <div v-for="result in searchResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                    <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <p class="text-gray-600"><strong>搜尋分數:</strong> ${ result.score }</p>
+                        <p class="text-gray-600"><strong>字元數:</strong> ${ result.char_count }</p>
+                        <p class="text-gray-600"><strong>單字數:</strong> ${ result.word_count }</p>
+                        <p class="text-gray-600"><strong>句子數:</strong> ${ result.sentence_count }</p>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
+                        <div class="flex flex-wrap -m-1">
+                            <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
+                                <span class="font-medium mr-1">${ word }</span>
+                                <span class="text-gray-600">${ frequency }</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-100 p-4 rounded-lg">
+                    <h4 class="font-semibold text-gray-700 mb-2">預覽:</h4>
+                    <p class="text-gray-800">${ result.preview }</p>
+                </div>
+            </div>
+        </div>
+        <p v-else-if="searchPerformed" class="text-gray-600 text-center py-8">沒有找到相關文件</p>
+
+        <!-- Upload Modal -->
+        <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="uploadModal" v-show="showModal" @click="closeModal">
+            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" @click.stop>
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">上傳文件</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <form @submit.prevent="uploadFile" enctype="multipart/form-data">
+                            <input type="file" class="mb-4" ref="fileInput" required>
+                            <button type="submit" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                                上傳
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Result Modal -->
+        <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="uploadResultModal" v-show="showResultModal" @click="closeResultModal">
+            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" @click.stop>
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">上傳結果</h3>
+                    <div class="mt-2 px-7 py-3" v-if="uploadResult">
+                        <h4 class="text-md font-semibold mb-2">檔案名稱: <a :href="'/documents/' + uploadResult.filename" target="_blank" class="text-blue-600 hover:underline">${ uploadResult.filename }</a></h4>
+                        <p class="text-gray-600 mb-1">字元數: ${ uploadResult.char_count }</p>
+                        <p class="text-gray-600 mb-1">單字數: ${ uploadResult.word_count }</p>
+                        <p class="text-gray-600 mb-1">句子數: ${ uploadResult.sentence_count }</p>
+                        <h5 class="font-semibold text-gray-700 mt-4 mb-2">最常見的10個關鍵字:</h5>
+                        <ul class="list-disc list-inside text-gray-600">
+                            <li v-for="(frequency, word) in uploadResult.keyword_frequency" :key="word">
+                                ${ word }: ${ frequency }
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="items-center px-4 py-3">
+                        <button id="closeResultModal" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300" @click="closeResultModal">
+                            關閉
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- footer -->
+    <footer class="text-center text-gray-600 py-4">
+        <p>© 2024 Chin Sung Tung, P77121082, 成功大學AI碩士在職專班</p>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script>
+        var app = new Vue({
+            el: '#app',
+            delimiters: ['${', '}'],
+            data: {
+                searchQuery: '',
+                searchResults: [],
+                searchPerformed: false,
+                uploadResult: null,
+                showModal: false,
+                showResultModal: false
+            },
+            methods: {
+                async searchDocuments() {
+                    try {
+                        const response = await axios.get(`/search?q=${encodeURIComponent(this.searchQuery)}`);
+                        this.searchResults = response.data.results;
+                        this.searchPerformed = true;
+                    } catch (error) {
+                        console.error('Error during search:', error);
+                        alert('搜尋過程中發生錯誤');
+                    }
+                },
+                showUploadModal() {
+                    this.showModal = true;
+                },
+                closeModal() {
+                    this.showModal = false;
+                },
+                closeResultModal() {
+                    this.showResultModal = false;
+                },
+                async uploadFile() {
+                    const formData = new FormData();
+                    const file = this.$refs.fileInput.files[0];
+                    formData.append('file', file);
+
+                    try {
+                        const response = await axios.post('/upload', formData, {
+                            headers: {
+                                'Content-Type': 'multipart/form-data'
+                            }
+                        });
+                        this.uploadResult = response.data;
+                        this.showModal = false;
+                        this.showResultModal = true;
+                    } catch (error) {
+                        console.error('Error during file upload:', error);
+                        alert('檔案上傳過程中發生錯誤');
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
