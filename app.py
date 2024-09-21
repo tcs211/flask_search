@@ -15,13 +15,17 @@ import ssl
 import sys
 import string
 
+
 app = Flask(__name__)
+# print(sys.path)
+root_path = os.path.dirname(os.path.abspath(__file__))
+print(root_path)
 CORS(app, resources={r"/*": 
                      {"origins": "*",
                     "methods": ["GET", "POST"],
                     "allow_headers": ["Content-Type", "Authorization"]}})  # You can replace "*" with specific domains
 
-app.config['UPLOAD_FOLDER'] = 'public/documents'
+app.config['UPLOAD_FOLDER'] = os.path.join(root_path, 'public', 'documents')
 
 # Download necessary NLTK data
 nltk.download('punkt')
@@ -32,7 +36,7 @@ porter_stemmer = PorterStemmer()
 english_stop_words = set(stopwords.words('english'))
 
 # Load Chinese stop words (you may need to provide your own list)
-with open('./chinese_stop_words.txt', 'r', encoding='utf-8') as f:
+with open(os.path.join(root_path, 'chinese_stop_words.txt'), 'r', encoding='utf-8') as f:
     chinese_stop_words = set(f.read().splitlines())
 
 # Initialize Jieba
@@ -45,7 +49,8 @@ index = {
     'document_store': {}
 }
 
-DB_FILE = './local_database.json'
+DB_FILE = os.path.join(root_path, 'local_database.json')
+# './local_database.json'
 
 def load_index():
     global index
