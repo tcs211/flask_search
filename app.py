@@ -41,7 +41,8 @@ with open(os.path.join(root_path, 'chinese_stop_words.txt'), 'r', encoding='utf-
 
 # Initialize Jieba
 
-jieba.set_dictionary('./dict.txt.big')
+jieba.set_dictionary(os.path.join(root_path, 'dict.txt.big'))
+    # './dict.txt.big'
 
 # Custom index structure
 index = {
