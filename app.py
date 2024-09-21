@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.utils import secure_filename
+from flask_cors import CORS
 import os
 import json
 import xml.etree.ElementTree as ET
@@ -15,6 +16,11 @@ import sys
 import string
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": 
+                     {"origins": "*",
+                    "methods": ["GET", "POST"],
+                    "allow_headers": ["Content-Type", "Authorization"]}})  # You can replace "*" with specific domains
+
 app.config['UPLOAD_FOLDER'] = 'public/documents'
 
 # Download necessary NLTK data
@@ -26,12 +32,12 @@ porter_stemmer = PorterStemmer()
 english_stop_words = set(stopwords.words('english'))
 
 # Load Chinese stop words (you may need to provide your own list)
-with open('chinese_stop_words.txt', 'r', encoding='utf-8') as f:
+with open('./chinese_stop_words.txt', 'r', encoding='utf-8') as f:
     chinese_stop_words = set(f.read().splitlines())
 
 # Initialize Jieba
 
-jieba.set_dictionary('dict.txt.big')
+jieba.set_dictionary('./dict.txt.big')
 
 # Custom index structure
 index = {
@@ -39,7 +45,7 @@ index = {
     'document_store': {}
 }
 
-DB_FILE = 'local_database.json'
+DB_FILE = './local_database.json'
 
 def load_index():
     global index
@@ -220,6 +226,7 @@ def search(query):
 
     # Process query tokens
     for token in query_tokens:
+        print ('token:', token)
         if token in index['inverted_index']:
             for doc_id in index['inverted_index'][token]:
                 if doc_id not in results:
@@ -230,6 +237,7 @@ def search(query):
     # Process phrases (for both Chinese and English)
     phrases = re.findall(r'"([^"]*)"', query)
     for phrase in phrases:
+        print ('phrase:', phrase)
         phrase_tokens = tokenize_and_stem(phrase)
         for doc_id in index['document_store']:
             doc_content = index['document_store'][doc_id]['content']
@@ -255,7 +263,7 @@ def search(query):
             'word_count': index['document_store'][doc_id]['word_count'],
             'sentence_count': index['document_store'][doc_id]['sentence_count'],
             'keyword_frequency': dict(sorted(index['document_store'][doc_id]['keyword_frequency'].items(), key=lambda x: x[1], reverse=True)[:10]),
-            'preview': index['document_store'][doc_id]['content'][:200] + '...'
+            'preview': index['document_store'][doc_id]['content'][:250] + '...'
         }
         for doc_id, data in results.items()
     ], key=lambda x: x['score'], reverse=True)
