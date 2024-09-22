@@ -325,11 +325,18 @@ if __name__ == '__main__':
         # HTTPS configuration
         
         try:
-            cert_path = 'C:\\Certbot\\live\\to-ai.net-0001\\'
+#             Certificate is saved at: /etc/letsencrypt/live/to-ai.net/fullchain.pem
+# Key is saved at:         /etc/letsencrypt/live/to-ai.net/privkey.pem
+
+            # ccheck if the certificate files exist
+            if os.path.exists('/etc/letsencrypt/live/to-ai.net/fullchain.pem') and os.path.exists('/etc/letsencrypt/live/to-ai.net/privkey.pem'):
+                cert_path = '/etc/letsencrypt/live/to-ai.net/'
+            elif os.path.exists('C:\\Certbot\\live\\to-ai.net-0001\\fullchain.pem') and os.path.exists('C:\\Certbot\\live\\to-ai.net-0001\\privkey.pem'):
+                cert_path = 'C:\\Certbot\\live\\to-ai.net-0001\\'
+            else:
+                raise FileNotFoundError("Certificate files not found in default locations.")
+
             print(f"Certificate path: {cert_path}")
-            print(f"Checking if certificate files exist:")
-            print(f"  Private key: {os.path.exists(os.path.join(cert_path, 'privkey.pem'))}")
-            print(f"  Full chain: {os.path.exists(os.path.join(cert_path, 'fullchain.pem'))}")
             
             context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             context.load_cert_chain(
