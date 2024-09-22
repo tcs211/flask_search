@@ -36,9 +36,14 @@ if os.name == 'posix':
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Download necessary NLTK data
-nltk.download('punkt', download_dir=nltk.data.path[0])
-nltk.download('punkt_tab', download_dir=nltk.data.path[0])
-nltk.download('stopwords', download_dir=nltk.data.path[0])
+if os.name == 'posix':
+    nltk.download('punkt', download_dir='/home/www/nltk_data')
+    nltk.download('punkt_tab', download_dir='/home/www/nltk_data')
+    nltk.download('stopwords', download_dir='/home/www/nltk_data')
+else:
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
+    nltk.download('stopwords')
 
 # Initialize NLTK components
 porter_stemmer = PorterStemmer()
