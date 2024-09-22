@@ -36,10 +36,11 @@ if root_path == '/home/www':
     os.makedirs(nltk_path, exist_ok=True)
     nltk.data.path.append(nltk_path)
     nltk.download('punkt', download_dir=nltk_path)
+    nltk.download('punkt_tab', download_dir=nltk_path)
     nltk.download('stopwords', download_dir=nltk_path)
 else:
     nltk.download('punkt')
-    nltk.download('punkt')
+    nltk.download('punkt_tab')
     nltk.download('stopwords')
 
 # Initialize NLTK components
