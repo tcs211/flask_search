@@ -27,12 +27,14 @@ CORS(app, resources={r"/*":
 
 app.config['UPLOAD_FOLDER'] = os.path.join(root_path, 'public', 'documents')
 
-# set the path to the nltk_data folder
-nltk.data.path.append(os.path.join(root_path, 'nltk_data'))
+# set the path to the nltk_data folder if system is linux
+if os.name == 'posix':
+    nltk.data.path.append('/home/www/nltk_data')
+    # create nltk_data folder if it doesn't exist
+    os.makedirs('/home/www/nltk_data', exist_ok=True)
 # create the upload folder if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-# create the nltk_data folder if it doesn't exist
-os.makedirs(nltk.data.path[0], exist_ok=True)
+
 # Download necessary NLTK data
 nltk.download('punkt', download_dir=nltk.data.path[0])
 nltk.download('punkt_tab', download_dir=nltk.data.path[0])
