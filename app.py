@@ -20,6 +20,7 @@ app = Flask(__name__)
 # print(sys.path)
 root_path = os.path.dirname(os.path.abspath(__file__))
 print(root_path)
+
 CORS(app, resources={r"/*": 
                      {"origins": "*",
                     "methods": ["GET", "POST"],
@@ -30,9 +31,16 @@ app.config['UPLOAD_FOLDER'] = os.path.join(root_path, 'public', 'documents')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Download necessary NLTK data
-nltk.download('punkt')
-nltk.download('punkt')
-nltk.download('stopwords')
+if root_path == '/home/www':
+    nltk_path = '/home/nltk_data'
+    os.makedirs(nltk_path, exist_ok=True)
+    nltk.data.path.append(nltk_path)
+    nltk.download('punkt', download_dir=nltk_path)
+    nltk.download('stopwords', download_dir=nltk_path)
+else:
+    nltk.download('punkt')
+    nltk.download('punkt')
+    nltk.download('stopwords')
 
 # Initialize NLTK components
 porter_stemmer = PorterStemmer()
