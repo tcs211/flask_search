@@ -36,25 +36,44 @@
                 <i class="fas fa-upload mr-2"></i> 上傳文件
             </button>
         </div>
-        
+
         <div class="search-section mb-8">
-            <form @submit.prevent="searchDocuments" class="flex"  style="max-width: 600px; margin: 0 auto;">
-                <input 
-                    type="text" 
-                    class="search-input w-2/3 p-2 border border-gray-300 
-                    rounded rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500 mb-0 sm:mb-0" 
-                    v-model="searchQuery" 
-                    placeholder="輸入關鍵字" 
-                    required
-                >
-                <button 
-                    type="submit" 
-                    class="search-button w-auto bg-blue-500 hover:bg-blue-600 whitespace-nowrap
-                    text-white font-bold px-4 rounded rounded-l-none transition 
-                    duration-300 ease-in-out"
-                >
-                    <i class="fas fa-search mr-2"></i> 搜尋
-                </button>
+            <form @submit.prevent="searchDocuments" class="flex flex-col items-center">
+                <div class="flex w-full max-w-3xl mb-4">
+                    <input 
+                        type="text" 
+                        class="search-input w-full p-2 border border-gray-300 rounded rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        v-model="searchQuery" 
+                        placeholder="輸入關鍵字" 
+                        required
+                    >
+                    <button 
+                        type="submit" 
+                        class="search-button w-auto bg-blue-500 hover:bg-blue-600 whitespace-nowrap text-white font-bold px-4 rounded rounded-l-none transition duration-300 ease-in-out"
+                    >
+                        <i class="fas fa-search mr-2"></i> 搜尋
+                    </button>
+                </div>
+                <div class="search-options w-full max-w-3xl flex justify-start">
+                    <div class="search-option ml-2">
+                        <label>
+                            <input type="checkbox" v-model="useAnd" @click="useOr=false"> AND
+                        </label>
+                        <input v-if="useAnd" v-model="andTerms" class="mr-2 border border-gray-300 rounded">
+                    </div>
+                    <div class="search-option ml-2">
+                        <label>
+                            <input type="checkbox" v-model="useOr" @click="useAnd=false"> OR
+                        </label>
+                        <input v-if="useOr" v-model="orTerms" class="mr-2 border border-gray-300 rounded">
+                    </div>
+                    <div class="search-option ml-2">
+                        <label>
+                            <input type="checkbox" v-model="useNot"> NOT
+                        </label>
+                        <input v-if="useNot" v-model="notTerms" class="mr-2 border border-gray-300 rounded">
+                    </div>
+                </div>
             </form>
         </div>
 
@@ -153,12 +172,30 @@
                 searchPerformed: false,
                 uploadResult: null,
                 showModal: false,
-                showResultModal: false
+                showResultModal: false,
+                useAnd: false,
+                useOr: false,
+                useNot: false,
+                andTerms: '',
+                orTerms: '',
+                notTerms: ''
             },
             methods: {
                 async searchDocuments() {
+                    let query = this.searchQuery;
+                    
+                    if (this.useAnd && this.andTerms) {
+                        query += ` +(${this.andTerms})`;
+                    }
+                    if (this.useOr && this.orTerms) {
+                        query += ` |(${this.orTerms})`;
+                    }
+                    if (this.useNot && this.notTerms) {
+                        query += ` -${this.notTerms.replace(/\s+/g, ' -')}`;
+                    }
+
                     try {
-                        const response = await axios.get(`/search?q=${encodeURIComponent(this.searchQuery)}`);
+                        const response = await axios.get(`/search?q=${encodeURIComponent(query)}`);
                         this.searchResults = response.data.results;
                         this.searchPerformed = true;
                     } catch (error) {

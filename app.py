@@ -10,7 +10,7 @@ from nltk.stem import PorterStemmer
 from nltk.corpus import stopwords
 import jieba
 import re
-
+from collections import defaultdict
 import ssl
 import sys
 import string
@@ -237,40 +237,54 @@ def process_file(file):
     }
 
 def search(query):
-    query_language = detect_language(query)
-    query_tokens = tokenize_and_stem(query)
+    
+    
+    # Parse the query
+    and_groups = re.findall(r'\+\((.*?)\)', query)
+    or_groups = re.findall(r'\|\((.*?)\)', query)
+    not_terms = re.findall(r'-(\w+)', query)
+    
+    # Remove special syntax from the main query
+    main_query = re.sub(r'\+\(.*?\)|\|\(.*?\)|-\w+', '', query).strip()
+    print('main_query:', main_query)
+    
+    results = defaultdict(lambda: {'score': 0, 'matches': {}})
 
-    results = {}
+    # Process main query
+    process_query_terms(main_query, results)
 
-    # Process query tokens
-    for token in query_tokens:
-        print ('token:', token)
-        if token in index['inverted_index']:
-            for doc_id in index['inverted_index'][token]:
-                if doc_id not in results:
-                    results[doc_id] = {'score': 0, 'matches': {}}
-                results[doc_id]['score'] += len(index['inverted_index'][token][doc_id])
-                results[doc_id]['matches'][token] = len(index['inverted_index'][token][doc_id])
+    print('main_results:', results)
 
-    # Process phrases (for both Chinese and English)
-    phrases = re.findall(r'"([^"]*)"', query)
-    for phrase in phrases:
-        print ('phrase:', phrase)
-        phrase_tokens = tokenize_and_stem(phrase)
-        for doc_id in index['document_store']:
-            doc_content = index['document_store'][doc_id]['content']
-            if query_language == 'zh-cn' or query_language == 'zh-tw':
-                # For Chinese, use direct string matching
-                matches = doc_content.count(phrase)
+    # Process AND groups
+    for and_group in and_groups:
+        and_results = defaultdict(lambda: {'score': 0, 'matches': {}})
+        process_query_terms(and_group, and_results)
+        print('and_results:', and_results)
+        results = {doc_id: data for doc_id, data in results.items() if doc_id in and_results}
+
+    # Process OR groups
+    for or_group in or_groups:
+        or_results = defaultdict(lambda: {'score': 0, 'matches': {}})
+        process_query_terms(or_group, or_results)
+        print('or_results:', or_results)
+        for doc_id, data in or_results.items():
+            if doc_id in results:
+                results[doc_id]['score'] += data['score']
+                results[doc_id]['matches'].update(data['matches'])
             else:
-                # For English, use regex to match stemmed tokens
-                phrase_regex = r'\b' + r'\s+'.join(map(re.escape, phrase_tokens)) + r'\b'
-                matches = len(re.findall(phrase_regex, doc_content, re.IGNORECASE))
-            if matches > 0:
-                if doc_id not in results:
-                    results[doc_id] = {'score': 0, 'matches': {}}
-                results[doc_id]['score'] += matches * len(phrase_tokens)
-                results[doc_id]['matches'][phrase] = matches
+                results[doc_id] = data
+
+    # Process NOT terms
+    for not_term in not_terms:
+        not_results =  defaultdict(lambda: {'score': 0, 'matches': {}})
+        print('not_results:', not_results)
+        process_query_terms(not_term, not_results)
+        results = {doc_id: data for doc_id, data in results.items() if doc_id not in not_results}
+
+
+    # Convert defaultdict to regular dict for JSON serialization
+    results = dict(results)
+    print('final_results:', results)
 
     return sorted([
         {
@@ -285,6 +299,16 @@ def search(query):
         }
         for doc_id, data in results.items()
     ], key=lambda x: x['score'], reverse=True)
+
+def process_query_terms(query, results):
+    query_tokens = tokenize_and_stem(query)
+    for token in query_tokens:
+        if token in index['inverted_index']:
+            for doc_id in index['inverted_index'][token]:
+                results[doc_id]['score'] += len(index['inverted_index'][token][doc_id])
+                results[doc_id]['matches'][token] = len(index['inverted_index'][token][doc_id])
+
+
 
 @app.route('/')
 def home():
@@ -301,13 +325,16 @@ def upload_file():
         file_info = process_file(file)
         return jsonify(file_info)
 
+
 @app.route('/search')
 def search_documents():
     query = request.args.get('q')
+    print('query:', query)
     if not query:
         return jsonify({'results': []})
     results = search(query)
     return jsonify({'results': results})
+
 
 @app.route('/documents/<path:filename>')
 def serve_document(filename):
