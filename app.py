@@ -10,7 +10,7 @@ from nltk.stem import PorterStemmer
 from nltk.corpus import stopwords
 import jieba
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 import ssl
 import sys
 import string
@@ -148,14 +148,25 @@ def count_sentences(text):
         return len(re.split(r'[，。！？]', text))
     else:
         return len(sent_tokenize(text))
-    
+
+def count_non_ascii_chars(text):
+    return sum(1 for char in text if ord(char) > 127)
+
+def count_non_ascii_words(tokens):
+    nonascii = 0
+    for word in tokens:
+        for char in word:
+            if ord(char) > 127:
+                nonascii += 1
+                break
+    return nonascii
+
 def process_file(file):
     filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
     
     # Read file content
-    # read only json, xml, txt files
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
     
@@ -182,7 +193,6 @@ def process_file(file):
     elif file.content_type == 'application/xml' or filename.lower().endswith('.xml'):
         try:
             root = ET.fromstring(content)
-            print (root)
             
             def remove_tags(element):
                 text = element.text or ''
@@ -197,18 +207,17 @@ def process_file(file):
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
         # For all other file types, including plain text
         # We'll use the content as is, including utf-8 characters
-        # filter out non-utf-8 characters
         content = content.encode('utf-8', 'ignore').decode('utf-8')
 
-    
     # Process the content
     tokens = tokenize_and_stem(content)
-    char_count = len(content)
+    char_count_with_spaces = len(content)
+    char_count_without_spaces = len(content.replace(" ", ""))
     word_count = len(tokens)
     sentence_count = count_sentences(content)
-    keyword_frequency = {}
-    for token in tokens:
-        keyword_frequency[token] = keyword_frequency.get(token, 0) + 1
+    non_ascii_char_count = count_non_ascii_chars(content)
+    non_ascii_word_count = count_non_ascii_words(tokens)
+    keyword_frequency = Counter(tokens)
     
     # Add to inverted index
     for position, token in enumerate(tokens):
@@ -221,10 +230,13 @@ def process_file(file):
     # Add to document store
     index['document_store'][filename] = {
         'content': content,
-        'char_count': char_count,
+        'char_count_with_spaces': char_count_with_spaces,
+        'char_count_without_spaces': char_count_without_spaces,
         'word_count': word_count,
         'sentence_count': sentence_count,
-        'keyword_frequency': keyword_frequency,
+        'non_ascii_char_count': non_ascii_char_count,
+        'non_ascii_word_count': non_ascii_word_count,
+        'keyword_frequency': dict(keyword_frequency),
     }
     
     # Save updated index
@@ -232,11 +244,15 @@ def process_file(file):
     
     return {
         'filename': filename,
-        'char_count': char_count,
+        'char_count_with_spaces': char_count_with_spaces,
+        'char_count_without_spaces': char_count_without_spaces,
         'word_count': word_count,
         'sentence_count': sentence_count,
-        'keyword_frequency': dict(sorted(keyword_frequency.items(), key=lambda x: x[1], reverse=True)[:10])
+        'non_ascii_char_count': non_ascii_char_count,
+        'non_ascii_word_count': non_ascii_word_count,
+        'keyword_frequency': dict(keyword_frequency.most_common(10))
     }
+    
 
 def search(query):
     
@@ -293,9 +309,12 @@ def search(query):
             'filename': doc_id,
             'score': data['score'],
             'matches': data['matches'],
-            'char_count': index['document_store'][doc_id]['char_count'],
+            'char_count_with_spaces': index['document_store'][doc_id]['char_count_with_spaces'],
+            'char_count_without_spaces': index['document_store'][doc_id]['char_count_without_spaces'],
             'word_count': index['document_store'][doc_id]['word_count'],
             'sentence_count': index['document_store'][doc_id]['sentence_count'],
+            'non_ascii_char_count': index['document_store'][doc_id]['non_ascii_char_count'],
+            'non_ascii_word_count': index['document_store'][doc_id]['non_ascii_word_count'],
             'keyword_frequency': dict(sorted(index['document_store'][doc_id]['keyword_frequency'].items(), key=lambda x: x[1], reverse=True)[:10]),
             'preview': index['document_store'][doc_id]['content'][:250] + '...'
         }
