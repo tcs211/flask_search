@@ -15,12 +15,11 @@ import ssl
 import sys
 import string
 
-
+# 起始app
 app = Flask(__name__)
-# print(sys.path)
 root_path = os.path.dirname(os.path.abspath(__file__))
 print(root_path)
-
+# cors防止跨域
 CORS(app, resources={r"/*": 
                      {"origins": "*",
                     "methods": ["GET", "POST"],
@@ -30,15 +29,17 @@ app.config['UPLOAD_FOLDER'] = os.path.join(root_path, 'public', 'documents')
 # create the upload folder if it doesn't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Download necessary NLTK data
+# 下載nltk資料
 if root_path == '/home/www':
+     # ubuntu server用此路徑
     nltk_path = '/home/nltk_data'
     os.makedirs(nltk_path, exist_ok=True)
     nltk.data.path.append(nltk_path)
     nltk.download('punkt', download_dir=nltk_path)
     nltk.download('punkt_tab', download_dir=nltk_path)
     nltk.download('stopwords', download_dir=nltk_path)
-else:
+else: 
+    # windows和pythonanywhere用此路徑
     nltk.download('punkt')
     nltk.download('punkt_tab')
     nltk.download('stopwords')
@@ -47,24 +48,23 @@ else:
 porter_stemmer = PorterStemmer()
 english_stop_words = set(stopwords.words('english'))
 
-# Load Chinese stop words (you may need to provide your own list)
+# Load Chinese stop words 
 with open(os.path.join(root_path, 'chinese_stop_words.txt'), 'r', encoding='utf-8') as f:
     chinese_stop_words = set(f.read().splitlines())
 
 # Initialize Jieba
-
 jieba.set_dictionary(os.path.join(root_path, 'dict.txt.big'))
-    # './dict.txt.big'
 
-# Custom index structure
+# 設定 index structure
 index = {
     'inverted_index': {},
     'document_store': {}
 }
 
+# 設定資料庫檔案路徑
 DB_FILE = os.path.join(root_path, 'local_database.json')
-# './local_database.json'
 
+# 載入資料庫
 def load_index():
     global index
     try:
@@ -89,6 +89,7 @@ def load_index():
 # Load existing index on startup
 load_index()
 
+# 儲存資料庫
 def save_index():
     try:
         with open(DB_FILE, 'w', encoding='utf-8') as f:
@@ -127,7 +128,7 @@ def detect_language(text):
 
 
 def tokenize_and_stem(text):
-    # Remove punctuation
+    # Remove punctuation，保留文字和數字及空格
     text = re.sub(r'[^\w\s]', '', text)
     
     language = detect_language(text)
@@ -205,8 +206,7 @@ def process_file(file):
         except ET.ParseError:
             print('Error parsing XML, treating as plain text')
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
-        # For all other file types, including plain text
-        # We'll use the content as is, including utf-8 characters
+        # Plain text file
         content = content.encode('utf-8', 'ignore').decode('utf-8')
 
     # Process the content
@@ -279,18 +279,22 @@ def search(query):
         process_query_terms(and_group, and_results)
         print('and_results:', and_results)
         results = {doc_id: data for doc_id, data in results.items() if doc_id in and_results}
+        # Update scores and matches
+        for doc_id, data in results.items():
+            data['score'] += and_results[doc_id]['score']
+            data['matches'].update(and_results[doc_id]['matches'])
+
 
     # Process OR groups
     for or_group in or_groups:
         or_results = defaultdict(lambda: {'score': 0, 'matches': {}})
         process_query_terms(or_group, or_results)
         print('or_results:', or_results)
-        for doc_id, data in or_results.items():
-            if doc_id in results:
-                results[doc_id]['score'] += data['score']
-                results[doc_id]['matches'].update(data['matches'])
-            else:
-                results[doc_id] = data
+        results = {doc_id: data for doc_id, data in results.items()} | {doc_id: data for doc_id, data in or_results.items() if doc_id not in results}
+        for doc_id, data in results.items():
+            if doc_id in or_results:
+                data['score'] += or_results[doc_id]['score']
+                data['matches'].update(or_results[doc_id]['matches'])
 
     # Process NOT terms
     for not_term in not_terms:
@@ -388,12 +392,14 @@ if __name__ == '__main__':
         # HTTPS configuration
         
         try:
-#             Certificate is saved at: /etc/letsencrypt/live/to-ai.net/fullchain.pem
-# Key is saved at:         /etc/letsencrypt/live/to-ai.net/privkey.pem
+            # Certificate is saved at: /etc/letsencrypt/live/to-ai.net/fullchain.pem
+            # Key is saved at:         /etc/letsencrypt/live/to-ai.net/privkey.pem
 
-            # ccheck if the certificate files exist
+            # check if the certificate files exist
+            # ubuntu server
             if os.path.exists('/etc/letsencrypt/live/to-ai.net/fullchain.pem') and os.path.exists('/etc/letsencrypt/live/to-ai.net/privkey.pem'):
                 cert_path = '/etc/letsencrypt/live/to-ai.net/'
+            # windows server
             elif os.path.exists('C:\\Certbot\\live\\to-ai.net-0001\\fullchain.pem') and os.path.exists('C:\\Certbot\\live\\to-ai.net-0001\\privkey.pem'):
                 cert_path = 'C:\\Certbot\\live\\to-ai.net-0001\\'
             else:
