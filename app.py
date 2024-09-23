@@ -155,11 +155,12 @@ def process_file(file):
     file.save(filepath)
     
     # Read file content
+    # read only json, xml, txt files
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
     
     # Process based on file type
-    if file.content_type == 'application/json' or filename.endswith('.json'):
+    if file.content_type == 'application/json' or filename.lower().endswith('.json'):
         try:
             json_content = json.loads(content)
             text_fields = []
@@ -178,7 +179,7 @@ def process_file(file):
             content = ' '.join(text_fields)
         except json.JSONDecodeError:
             print('Error parsing JSON, treating as plain text')
-    elif file.content_type == 'application/xml' or filename.endswith('.xml'):
+    elif file.content_type == 'application/xml' or filename.lower().endswith('.xml'):
         try:
             root = ET.fromstring(content)
             print (root)
@@ -193,11 +194,12 @@ def process_file(file):
             content = remove_tags(root)
         except ET.ParseError:
             print('Error parsing XML, treating as plain text')
-    else:
+    elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
         # For all other file types, including plain text
         # We'll use the content as is, including utf-8 characters
         # filter out non-utf-8 characters
         content = content.encode('utf-8', 'ignore').decode('utf-8')
+
     
     # Process the content
     tokens = tokenize_and_stem(content)
@@ -317,13 +319,16 @@ def home():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': '沒有上傳檔案'}), 400
     file = request.files['file']
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    if file:
+        return jsonify({'error': '沒有選擇檔案'}), 400
+    accepted_types = ['json', 'xml', 'txt']
+    if file and file.filename.split('.')[-1].lower() in accepted_types:
         file_info = process_file(file)
         return jsonify(file_info)
+    else:
+        return jsonify({'error': '不支援的檔案格式'}), 400
 
 
 @app.route('/search')
@@ -331,9 +336,12 @@ def search_documents():
     query = request.args.get('q')
     print('query:', query)
     if not query:
-        return jsonify({'results': []})
-    results = search(query)
-    return jsonify({'results': results})
+        return jsonify({'error': '請輸入搜尋字串'}), 400
+    try:
+        results = search(query)
+        return jsonify({'results': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/documents/<path:filename>')

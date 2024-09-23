@@ -202,7 +202,7 @@
                         this.searchPerformed = true;
                     } catch (error) {
                         console.error('Error during search:', error);
-                        alert('搜尋過程中發生錯誤');
+                        alert(error.response.data.error);
                     }
                 },
                 showUploadModal() {
@@ -230,7 +230,7 @@
                         this.showResultModal = true;
                     } catch (error) {
                         console.error('Error during file upload:', error);
-                        alert('檔案上傳過程中發生錯誤');
+                        alert(error.response.data.error);
                     }
                 }
             }
