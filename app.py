@@ -140,7 +140,7 @@ def tokenize_and_stem(text):
         return [token for token in tokens if token not in chinese_stop_words and token.strip()]
     else:
         tokens = word_tokenize(text.lower())
-        return [porter_stemmer.stem(token) for token in tokens if token not in english_stop_words]
+        return [porter_stemmer.stem(token) for token in tokens ]#if token not in english_stop_words]
 
 def count_sentences(text):
     language = detect_language(text)
@@ -201,7 +201,7 @@ def process_file(file):
             
             text_fields = []
             for elem in root.iter():
-                if'title' == elem.tag.lower() or 'abstract' == elem.tag.lower():
+                if 'abstract' == elem.tag.lower(): #'title' == elem.tag.lower() or
                     # get whole element content string
                     elem_text = ET.tostring(elem, encoding='utf-8', method='text').decode('utf-8')
                     # replace <tag> and </tag> with space
