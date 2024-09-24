@@ -170,6 +170,8 @@ def process_file(file):
     # Read file content
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
+        # remove >2 spaces to 1 space
+        content = re.sub(r'\s{2,}', ' ', content)
     
     # Process based on file type
     if file.content_type == 'application/json' or filename.lower().endswith('.json'):
@@ -194,15 +196,15 @@ def process_file(file):
     elif file.content_type == 'application/xml' or filename.lower().endswith('.xml'):
         try:
             root = ET.fromstring(content)
+
+            # only extract text from tag include "title" or "abstract"
             
-            def remove_tags(element):
-                text = element.text or ''
-                for sub_element in element:
-                    text += remove_tags(sub_element)
-                text += element.tail or ''
-                return text
-            
-            content = remove_tags(root)
+            text_fields = []
+            for elem in root.iter():
+                if'title' in elem.tag.lower() or 'abstract' in elem.tag.lower():
+                    print (elem.tag, elem.text)
+                    text_fields.append(elem.text)
+            content = '\n'.join(text_fields)
         except ET.ParseError:
             print('Error parsing XML, treating as plain text')
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
@@ -308,6 +310,26 @@ def search(query):
     results = dict(results)
     print('final_results:', results)
 
+    # preview find the first token in the content , retrieve 300 characters aroud it
+    preview = ''
+    for doc_id, data in results.items():
+        content = index['document_store'][doc_id]['content']
+        matches = data['matches']
+        if matches:
+            first_match = min(matches, key=matches.get)
+            match_position = content.find(first_match)
+            preview = content[max(0, match_position - 150):min(len(content), match_position + 150)]
+            # highlight the match with <span ...> tag
+            for match in matches:
+                preview = preview.replace(match, f'<span class="bg-yellow-200">{match}</span>')
+
+            # replcae the new line with <br> tag
+            preview = preview.replace('\n', '<br>')
+            data['preview'] = '...' + preview + '...'
+        else:
+            data['preview'] = content[:300] + '...'
+
+
     return sorted([
         {
             'filename': doc_id,
@@ -320,7 +342,7 @@ def search(query):
             'non_ascii_char_count': index['document_store'][doc_id]['non_ascii_char_count'],
             'non_ascii_word_count': index['document_store'][doc_id]['non_ascii_word_count'],
             'keyword_frequency': dict(sorted(index['document_store'][doc_id]['keyword_frequency'].items(), key=lambda x: x[1], reverse=True)[:10]),
-            'preview': index['document_store'][doc_id]['content'][:250] + '...'
+            'preview': data['preview']
         }
         for doc_id, data in results.items()
     ], key=lambda x: x['score'], reverse=True)
