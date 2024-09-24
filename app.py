@@ -140,8 +140,8 @@ def tokenize_and_stem(text):
         return [token for token in tokens if token not in chinese_stop_words and token.strip()]
     else:
         tokens = word_tokenize(text.lower())
-        return tokens
-        # return [porter_stemmer.stem(token) for token in tokens ]#if token not in english_stop_words]
+        # return tokens
+        return [porter_stemmer.stem(token) for token in tokens if token not in english_stop_words]
 
 def count_sentences(text):
     language = detect_language(text)
@@ -380,9 +380,10 @@ def upload_file():
         return jsonify({'error': '不支援的檔案格式'}), 400
 
 
-@app.route('/search')
+@app.route('/search', methods=['POST'])
 def search_documents():
-    query = request.args.get('q')
+    data = request.get_json()
+    query = data.get('q')
     print('query:', query)
     if not query:
         return jsonify({'error': '請輸入搜尋字串'}), 400
@@ -391,7 +392,6 @@ def search_documents():
         return jsonify({'results': results})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
 
 @app.route('/documents/<path:filename>')
 def serve_document(filename):

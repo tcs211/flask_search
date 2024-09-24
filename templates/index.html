@@ -203,7 +203,7 @@
                     }
 
                     try {
-                        const response = await axios.get(`/search?q=${encodeURIComponent(query)}`);
+                        const response = await axios.post('/search', { q: query });
                         this.searchResults = response.data.results.map(result => ({
                             ...result,
                             char_count_with_spaces: result.char_count_with_spaces,
