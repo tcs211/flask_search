@@ -202,13 +202,13 @@ def process_file(file):
             
             text_fields = []
             for elem in root.iter():
-                if 'abstract' == elem.tag.lower(): #'title' == elem.tag.lower() or
+                if 'AbstractText' == elem.tag: #'title' == elem.tag.lower() or
                     # get whole element content string
                     elem_text = ET.tostring(elem, encoding='utf-8', method='text').decode('utf-8')
                     # replace <tag> and </tag> with space
                     elem_text = re.sub(r'<.*?>', ' ', elem_text)
                     text_fields.append(elem_text)
-            content = '\n'.join(text_fields)
+            content = ' '.join(text_fields)
         except ET.ParseError:
             print('Error parsing XML, treating as plain text')
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
