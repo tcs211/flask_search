@@ -140,7 +140,8 @@ def tokenize_and_stem(text):
         return [token for token in tokens if token not in chinese_stop_words and token.strip()]
     else:
         tokens = word_tokenize(text.lower())
-        return [porter_stemmer.stem(token) for token in tokens ]#if token not in english_stop_words]
+        return tokens
+        # return [porter_stemmer.stem(token) for token in tokens ]#if token not in english_stop_words]
 
 def count_sentences(text):
     language = detect_language(text)
