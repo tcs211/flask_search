@@ -6,26 +6,31 @@
     <title>Tungo 文件搜尋引擎</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-cloud/1.2.5/d3.layout.cloud.min.js"></script>
     <style>
         [v-cloak] { display: none; }
-        html, body {
+        .search-header {
+            position: relative;
+            padding: 2rem 0;
+        }
+        #wordCloudBackground {
+            position: absolute;
+            top: 0;
+            left: 100px;
+            width: 100%;
             height: 100%;
-        }
-        body {
-            display: flex;
-            flex-direction: column;
-        }
-        #app {
-            flex: 1 0 auto;
-        }
-        footer {
-            flex-shrink: 0;
+            opacity: 0.8;
+            pointer-events: none;
+            z-index: -1;
         }
     </style>
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div id="app" class="container mx-auto px-4 py-8" v-cloak>
-        <header class="mb-8">
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <div id="app" class="container mx-auto px-4 py-5 flex-grow" v-cloak>
+        <header class="mb-3 search-header">            
+            <div id="wordCloudBackground"></div>
             <h1 class="text-4xl font-bold text-gray-800 mb-2">Tungo 文件搜尋引擎</h1>
             <p class="text-gray-600">快速搜尋您的文件庫</p>
             <p class="text-gray-600">成功大學人工智慧資訊擷取技術課程作業</p>
@@ -35,43 +40,49 @@
             <button @click="showUploadModal" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 ease-in-out flex items-center">
                 <i class="fas fa-upload mr-2"></i> 上傳文件
             </button>
-        </div>
+            <button onclick="location.href='/documents'" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-full transition duration-300 ease-in-out flex items-center ml-1"></a>
+                <i class="fas fa-list mr-2"></i> 查看所有文件             
+            </button>
+        </div>        
 
-        <div class="search-section mb-8">
+        <div class="mb-8">
             <form @submit.prevent="searchDocuments" class="flex flex-col items-center">
                 <div class="flex w-full max-w-3xl mb-4">
                     <input 
-                        type="text" 
-                        class="search-input w-full p-2 border border-gray-300 rounded rounded-r-none focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        type="search"
+                        class="w-full p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white bg-opacity-90" 
                         v-model="searchQuery" 
                         placeholder="輸入關鍵字" 
                         required
                     >
                     <button 
                         type="submit" 
-                        class="search-button w-auto bg-blue-500 hover:bg-blue-600 whitespace-nowrap text-white font-bold px-4 rounded rounded-l-none transition duration-300 ease-in-out"
+                        class="whitespace-nowrap bg-gray-500 hover:bg-gray-600 text-white font-bold px-6 py-2 rounded-r-md transition duration-300 ease-in-out"
                     >
                         <i class="fas fa-search mr-2"></i> 搜尋
                     </button>
                 </div>
-                <div class="search-options w-full max-w-3xl flex justify-start">
-                    <div class="search-option ml-2">
-                        <label>
-                            <input type="checkbox" v-model="useAnd" @click="useOr=false"> AND
+                <div class="search-options w-full max-w-3xl flex flex-wrap justify-start gap-4">
+                    <div class="search-option">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" v-model="useAnd" @click="useOr=false" class="form-checkbox h-5 w-5 text-blue-600">
+                            <span class="ml-2">AND</span>
                         </label>
-                        <input v-if="useAnd" v-model="andTerms" class="mr-2 border border-gray-300 rounded">
+                        <input v-if="useAnd" v-model="andTerms" class="mt-1 p-1 w-full border border-gray-300 rounded">
                     </div>
-                    <div class="search-option ml-2">
-                        <label>
-                            <input type="checkbox" v-model="useOr" @click="useAnd=false"> OR
+                    <div class="search-option">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" v-model="useOr" @click="useAnd=false" class="form-checkbox h-5 w-5 text-blue-600">
+                            <span class="ml-2">OR</span>
                         </label>
-                        <input v-if="useOr" v-model="orTerms" class="mr-2 border border-gray-300 rounded">
+                        <input v-if="useOr" v-model="orTerms" class="mt-1 p-1 w-full border border-gray-300 rounded">
                     </div>
-                    <div class="search-option ml-2">
-                        <label>
-                            <input type="checkbox" v-model="useNot"> NOT
+                    <div class="search-option">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" v-model="useNot" class="form-checkbox h-5 w-5 text-blue-600">
+                            <span class="ml-2">NOT</span>
                         </label>
-                        <input v-if="useNot" v-model="notTerms" class="mr-2 border border-gray-300 rounded">
+                        <input v-if="useNot" v-model="notTerms" class="mt-1 p-1 w-full border border-gray-300 rounded">
                     </div>
                 </div>
             </form>
@@ -79,23 +90,23 @@
 
         <div v-if="searchResults.length > 0" class="search-results">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">搜尋結果 
-                <span class="text-sm text-gray-600">(${ searchResults.length } 筆結果)</span>
+                <span class="text-sm text-gray-600">(${searchResults.length} 筆結果)</span>
             </h2>
-            <div v-for="result in searchResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6 mb-6">
-                <h3 class="text-xl font-semibold text-blue-600 mb-2">
-                    <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <p class="text-gray-600"><strong>搜尋分數:</strong> ${ result.score }</p>
-                        <p class="text-gray-600"><strong>字元數 (含空格):</strong> ${ result.char_count_with_spaces }</p>
-                        <p class="text-gray-600"><strong>字元數 (不含空格):</strong> ${ result.char_count_without_spaces }</p>
-                        <p class="text-gray-600"><strong>單字數:</strong> ${ result.word_count }</p>
-                        <p class="text-gray-600"><strong>句子數:</strong> ${ result.sentence_count }</p>
-                        <p class="text-gray-600"><strong>非ASCII字元數:</strong> ${ result.non_ascii_char_count }</p>
-                        <p class="text-gray-600"><strong>非ASCII字元的單字數:</strong> ${ result.non_ascii_word_count }</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div v-for="result in searchResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                        <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
+                    </h3>
+                    <div class="mb-4 space-y-1">
+                        <p class="text-gray-600"><span class="font-semibold">搜尋分數:</span> ${ result.score }</p>
+                        <p class="text-gray-600"><span class="font-semibold">字元數 (含空格):</span> ${ result.char_count_with_spaces }</p>
+                        <p class="text-gray-600"><span class="font-semibold">字元數 (不含空格):</span> ${ result.char_count_without_spaces }</p>
+                        <p class="text-gray-600"><span class="font-semibold">單字數:</span> ${ result.word_count }</p>
+                        <p class="text-gray-600"><span class="font-semibold">句子數:</span> ${ result.sentence_count }</p>
+                        <p class="text-gray-600"><span class="font-semibold">非ASCII字元數:</span> ${ result.non_ascii_char_count }</p>
+                        <p class="text-gray-600"><span class="font-semibold">非ASCII字元的單字數:</span> ${ result.non_ascii_word_count }</p>
                     </div>
-                    <div>
+                    <div class="mb-4">
                         <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
                         <div class="flex flex-wrap -m-1">
                             <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
@@ -104,10 +115,17 @@
                             </div>
                         </div>
                     </div>
-                </div>
-                <div class="bg-gray-100 p-4 rounded-lg">
-                    <h4 class="font-semibold text-gray-700 mb-2">預覽:</h4>
-                    <p class="text-gray-800" v-html="result.preview"></p>
+                    <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-2">標題</h4>
+                        <div v-html="result.title" class="text-gray-700"></div>
+                        <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">摘要</h4>
+                        <div class="text-sm text-gray-700" v-html="result.abstract"></div>
+                    </div>
+                    <div class="mt-4">
+                        <button @click="confirmDelete(result.filename)" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out">
+                            <i class="fas fa-trash-alt mr-2"></i> 刪除
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,7 +139,7 @@
                     <div class="mt-2 px-7 py-3">
                         <form @submit.prevent="uploadFile" enctype="multipart/form-data">
                             <input type="file" class="mb-4" ref="fileInput" required>
-                            <button type="submit" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                            <button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
                                 上傳
                             </button>
                         </form>
@@ -158,14 +176,33 @@
                 </div>
             </div>
         </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="deleteModal" v-show="showDeleteModal" @click="closeDeleteModal">
+            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" @click.stop>
+                <div class="mt-3 text-center">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900">確認刪除</h3>
+                    <div class="mt-2 px-7 py-3">
+                        <p class="text-gray-500">您確定要刪除這個文件嗎？</p>
+                        <p class="font-semibold">${ documentToDelete }</p>
+                    </div>
+                    <div class="items-center px-4 py-3">
+                        <button @click="deleteDocument" class="mb-2 w-full px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300">
+                            刪除
+                        </button>
+                        <button @click="closeDeleteModal" class="w-full px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            取消
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <!-- footer -->
-    <footer class="text-center text-gray-600 py-4 px-3">
-        
-            <div class="mr-2 inline-block">© 2024 Chin Sung Tung</div>
-            <div class="mr-2 inline-block">P77121082</span>
-            <div class="mr-2 inline-block">成功大學AI碩士在職專班</div>
-        
+
+    <footer class="bg-gray-200 text-center text-gray-600 py-4 px-3">
+        <div class="inline-block mr-2">© 2024 Chin Sung Tung</div>
+        <div class="inline-block mr-2">P77121082</div>
+        <div class="inline-block">成功大學AI碩士在職專班</div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
@@ -175,12 +212,15 @@
             el: '#app',
             delimiters: ['${', '}'],
             data: {
+                wordCloudData: [],
                 searchQuery: '',
                 searchResults: [],
                 searchPerformed: false,
                 uploadResult: null,
                 showModal: false,
                 showResultModal: false,
+                showDeleteModal: false,
+                documentToDelete: '',
                 useAnd: false,
                 useOr: false,
                 useNot: false,
@@ -215,9 +255,60 @@
                             keyword_frequency: result.keyword_frequency
                         }));
                         this.searchPerformed = true;
+                        this.generateWordCloudData();
+                        this.$nextTick(() => {
+                            this.renderWordCloud();
+                        });
                     } catch (error) {
                         console.error('Error during search:', error);
                         alert(error.response.data.error);
+                    }
+                },
+                generateWordCloudData() {
+                    const allKeywords = {};
+                    this.searchResults.forEach(result => {
+                        Object.entries(result.keyword_frequency).forEach(([word, freq]) => {
+                            if (allKeywords[word]) {
+                                allKeywords[word] += freq;
+                            } else {
+                                allKeywords[word] = freq;
+                            }
+                        });
+                    });
+                    this.wordCloudData = Object.entries(allKeywords).map(([text, size]) => ({ text, size }));
+                },
+                renderWordCloud() {
+                    const width = document.querySelector('.search-header').offsetWidth;
+                    const height = 300; // Adjust this value as needed
+
+                    d3.select("#wordCloudBackground").selectAll("*").remove();
+
+                    const layout = d3.layout.cloud()
+                        .size([width, height])
+                        .words(this.wordCloudData)
+                        .padding(5)
+                        .rotate(() => ~~(Math.random() * 2) * 15)
+                        .font("Impact")
+                        .fontSize(d => Math.sqrt(d.size) * 10)
+                        .on("end", draw);
+
+                    layout.start();
+
+                    function draw(words) {
+                        d3.select("#wordCloudBackground").append("svg")
+                            .attr("width", layout.size()[0])
+                            .attr("height", layout.size()[1])
+                            .append("g")
+                            .attr("transform", "translate(" + layout.size()[0] / 2 + "," + layout.size()[1] / 2 + ")")
+                            .selectAll("text")
+                            .data(words)
+                            .enter().append("text")
+                            .style("font-size", d => d.size + "px")
+                            .style("font-family", "Impact")
+                            .style("fill", () => d3.schemeCategory10[Math.floor(Math.random() * 10)])
+                            .attr("text-anchor", "middle")
+                            .attr("transform", d => "translate(" + [d.x, d.y] + ")rotate(" + d.rotate + ")")
+                            .text(d => d.text);
                     }
                 },
                 showUploadModal() {
@@ -246,6 +337,29 @@
                     } catch (error) {
                         console.error('Error during file upload:', error);
                         alert(error.response.data.error);
+                    }
+                },
+                confirmDelete(filename) {
+                    this.documentToDelete = filename;
+                    this.showDeleteModal = true;
+                },
+                closeDeleteModal() {
+                    this.showDeleteModal = false;
+                    this.documentToDelete = '';
+                },
+                async deleteDocument() {
+                    try {
+                        const response = await axios.post('/delete', { filename: this.documentToDelete });
+                        if (response.data.success) {
+                            this.searchResults = this.searchResults.filter(result => result.filename !== this.documentToDelete);
+                            this.closeDeleteModal();
+                            alert('文件已成功刪除');
+                        } else {
+                            alert('刪除文件時發生錯誤: ' + response.data.error);
+                        }
+                    } catch (error) {
+                        console.error('Error during document deletion:', error);
+                        alert('刪除文件時發生錯誤: ' + error.response.data.error);
                     }
                 }
             }

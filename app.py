@@ -6,7 +6,7 @@ import json
 import xml.etree.ElementTree as ET
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk.stem import PorterStemmer
+from nltk.stem.snowball import SnowballStemmer
 from nltk.corpus import stopwords
 import jieba
 import re
@@ -45,7 +45,7 @@ else:
     nltk.download('stopwords')
 
 # Initialize NLTK components
-porter_stemmer = PorterStemmer()
+snowball_stemmer =  SnowballStemmer("english", ignore_stopwords=True)
 english_stop_words = set(stopwords.words('english'))
 
 # Load Chinese stop words 
@@ -129,19 +129,27 @@ def detect_language(text):
 
 def tokenize_and_stem(text):
     # Remove punctuation，保留文字和數字及空格
-    text = re.sub(r'[^\w\s]', '', text)
-    
+    wordsCount = 0
+    text = re.sub(r'[^\w\s-]', '', text)    
     language = detect_language(text)
     print ('language:', language)
     if language == 'zh-cn' or language == 'zh-tw':
         # Use jieba for Chinese tokenization
         tokens = jieba.cut_for_search(text)
         print ('tokens:', tokens)
-        return [token for token in tokens if token not in chinese_stop_words and token.strip()]
+        wordsCount = len(tokens)
+        return[ [token for token in tokens if token not in chinese_stop_words and token.strip()],
+             wordsCount]
     else:
         tokens = word_tokenize(text.lower())
+        wordsCount = len(tokens)
         # return tokens
-        return [porter_stemmer.stem(token) for token in tokens if token not in english_stop_words]
+        return [
+             [snowball_stemmer.stem(token) for token in tokens if token not in english_stop_words and token.strip()],
+             wordsCount
+        ]
+
+
 
 def count_sentences(text):
     language = detect_language(text)
@@ -198,17 +206,24 @@ def process_file(file):
         try:
             root = ET.fromstring(content)
 
-            # only extract text from tag include "title" or "abstract"
-            
-            text_fields = []
-            for elem in root.iter():
-                if 'AbstractText' == elem.tag: #'title' == elem.tag.lower() or
-                    # get whole element content string
-                    elem_text = ET.tostring(elem, encoding='utf-8', method='text').decode('utf-8')
-                    # replace <tag> and </tag> with space
-                    elem_text = re.sub(r'<.*?>', ' ', elem_text)
-                    text_fields.append(elem_text)
-            content = ' '.join(text_fields)
+            # Extract title and abstract
+            title = ''
+            abstract = ''
+            # find the title or Title element
+            title_elem = root.find('.//ArticleTitle')
+            print ('title_elem:', title_elem)
+            if title_elem is not None:
+                title = title_elem.text.strip()
+            # find all AbstractText element
+            abstract_elem = root.findall('.//AbstractText')
+            abstractStringList = []
+            for elem in abstract_elem:  
+                abstract = ET.tostring(elem, encoding='utf-8', method='text').decode('utf-8')
+                abstract = re.sub(r'<.*?>', ' ', abstract)
+                abstractStringList.append(abstract)
+            abstract = '\n'.join(abstractStringList)
+            content = title + '\n' + abstract
+                
         except ET.ParseError:
             print('Error parsing XML, treating as plain text')
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
@@ -216,15 +231,22 @@ def process_file(file):
         content = content.encode('utf-8', 'ignore').decode('utf-8')
 
     # Process the content
-    tokens = tokenize_and_stem(content)
-    char_count_with_spaces = len(content)
-    char_count_without_spaces = len(content.replace(" ", ""))
-    word_count = len(tokens)
-    sentence_count = count_sentences(content)
-    non_ascii_char_count = count_non_ascii_chars(content)
-    non_ascii_word_count = count_non_ascii_words(tokens)
+    tokens, word_count = tokenize_and_stem(abstract)
+    tokensTitle, _ = tokenize_and_stem(title)
+    tokens += tokensTitle
+
+    char_count_with_spaces = len(abstract)
+    char_count_without_spaces = len(abstract.replace(" ", ""))
+    sentence_count = count_sentences(abstract)
+    non_ascii_char_count = count_non_ascii_chars(abstract)
+    non_ascii_word_count = count_non_ascii_words(abstract)
     keyword_frequency = Counter(tokens)
     
+    # remove inverted index if exists in the index
+    for token in index['inverted_index']:
+        if filename in index['inverted_index'][token]:
+            del index['inverted_index'][token][filename]
+            
     # Add to inverted index
     for position, token in enumerate(tokens):
         if token not in index['inverted_index']:
@@ -234,7 +256,10 @@ def process_file(file):
         index['inverted_index'][token][filename].append(position)
     
     # Add to document store
+
     index['document_store'][filename] = {
+        'title': title if title else "No title",
+        'abstract': abstract if abstract else "No abstract",
         'content': content,
         'char_count_with_spaces': char_count_with_spaces,
         'char_count_without_spaces': char_count_without_spaces,
@@ -272,10 +297,10 @@ def search(query):
     main_query = re.sub(r'\+\(.*?\)|\|\(.*?\)|-\w+', '', query).strip()
     print('main_query:', main_query)
     
-    results = defaultdict(lambda: {'score': 0, 'matches': {}})
+    results = defaultdict(lambda: {'score': 0, 'matches': {}, 'indexList': []})
 
     # Process main query
-    process_query_terms(main_query, results)
+    main_query_tokens = process_query_terms(main_query, results)
 
     print('main_results:', results)
 
@@ -314,29 +339,45 @@ def search(query):
     results = dict(results)
     print('final_results:', results)
 
-    # preview find the first token in the content , retrieve 300 characters aroud it
-    preview = ''
-    for doc_id, data in results.items():
-        content = index['document_store'][doc_id]['content']
-        matches = data['matches']
-        if matches:
-            first_match = min(matches, key=matches.get)
-            match_position = content.find(first_match)
-            preview = content[max(0, match_position - 150):min(len(content), match_position + 150)]
-            # highlight the match with <span ...> tag
-            for match in matches:
-                preview = preview.replace(match, f'<span class="bg-yellow-200">{match}</span>')
 
-            # replcae the new line with <br> tag
-            preview = preview.replace('\n', '<br>')
-            data['preview'] = '...' + preview + '...'
-        else:
-            data['preview'] = content[:300] + '...'
+    for doc_id, data in results.items():
+        def highlight_tokens(text, tokens):
+            position = -1
+            for token in tokens:
+               
+                pattern = re.compile(re.escape(token), re.IGNORECASE)
+                
+                next = pattern.search(text, position + 1)
+                newPosition = next.start() if next else -1
+                print ('newPosition:', newPosition)
+                while newPosition > position:
+                    # find  the first space after newPosition
+                    spacePosition = text.find(' ', newPosition)
+                    targetString = text[newPosition:spacePosition]
+                    text = text[:newPosition] + '<span class="bg-yellow-200">' + targetString + '</span>' + text[spacePosition:]
+                    position = newPosition + len(targetString)
+                    next = pattern.search(text, position)
+                    newPosition = next.start() if next else -1
+
+                    
+            
+            return text
+        title = index['document_store'][doc_id]['title']
+        abstract = index['document_store'][doc_id]['abstract']
+        # highlight all the match main_query_tokens in the abstract and title with <span class="bg-yellow-200"> tag
+        
+        data['abstract'] = highlight_tokens(abstract, main_query_tokens)
+        data['title'] = highlight_tokens(title, main_query_tokens)
+
+        
+
 
 
     return sorted([
         {
             'filename': doc_id,
+            'title': data['title'],
+            'abstract': data['abstract'],
             'score': data['score'],
             'matches': data['matches'],
             'char_count_with_spaces': index['document_store'][doc_id]['char_count_with_spaces'],
@@ -346,18 +387,21 @@ def search(query):
             'non_ascii_char_count': index['document_store'][doc_id]['non_ascii_char_count'],
             'non_ascii_word_count': index['document_store'][doc_id]['non_ascii_word_count'],
             'keyword_frequency': dict(sorted(index['document_store'][doc_id]['keyword_frequency'].items(), key=lambda x: x[1], reverse=True)[:10]),
-            'preview': data['preview']
+            
         }
         for doc_id, data in results.items()
     ], key=lambda x: x['score'], reverse=True)
 
 def process_query_terms(query, results):
-    query_tokens = tokenize_and_stem(query)
+    query_tokens = tokenize_and_stem(query)[0]
     for token in query_tokens:
         if token in index['inverted_index']:
             for doc_id in index['inverted_index'][token]:
+                print ('doc_id:', doc_id, 'token:', token, 'score:', len(index['inverted_index'][token][doc_id]))
                 results[doc_id]['score'] += len(index['inverted_index'][token][doc_id])
                 results[doc_id]['matches'][token] = len(index['inverted_index'][token][doc_id])
+    return query_tokens
+
 
 
 
@@ -396,6 +440,61 @@ def search_documents():
 @app.route('/documents/<path:filename>')
 def serve_document(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/delete', methods=['POST'])
+def delete_document():
+    data = request.get_json()
+    filename = data.get('filename')
+    
+    if not filename:
+        return jsonify({'success': False, 'error': 'No filename provided'}), 400
+    
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    
+    if not os.path.exists(filepath):
+        return jsonify({'success': False, 'error': 'File not found'}), 404
+    
+    try:
+        # Remove the file
+        os.remove(filepath)
+        
+        # Remove the document from the index
+        if filename in index['document_store']:
+            del index['document_store'][filename]
+        
+        # Remove the document from the inverted index
+        for token in index['inverted_index']:
+            if filename in index['inverted_index'][token]:
+                del index['inverted_index'][token][filename]
+        
+        # Remove empty tokens from the inverted index
+        index['inverted_index'] = {token: docs for token, docs in index['inverted_index'].items() if docs}
+        
+        # Save the updated index
+        save_index()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/documents', methods=['POST'])
+def get_all_documents():
+    documents = []
+    for filename, data in index['document_store'].items():
+        documents.append({
+            'filename': filename,
+            'char_count_with_spaces': data['char_count_with_spaces'],
+            'char_count_without_spaces': data['char_count_without_spaces'],
+            'word_count': data['word_count'],
+            'sentence_count': data['sentence_count'],
+            'non_ascii_char_count': data['non_ascii_char_count'],
+            'non_ascii_word_count': data['non_ascii_word_count']
+        })
+    return jsonify(documents)
+
+@app.route('/documents')
+def document_list():
+    return render_template('document_list.html')
 
 if __name__ == '__main__':
     print("Script started.")
@@ -453,3 +552,4 @@ if __name__ == '__main__':
         # Run HTTP server on the specified port
         print(f"Starting HTTP server on port {port}...")
         app.run(host='0.0.0.0', port=port)
+
