@@ -8,6 +8,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://d3js.org/d3.v5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-cloud/1.2.5/d3.layout.cloud.min.js"></script>
+    <script src="javascript/porter-stemmer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
     <style>
         [v-cloak] { display: none; }
         .search-header {
@@ -24,7 +28,13 @@
             pointer-events: none;
             z-index: -1;
         }
-    </style>
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #5079ff;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #5079ff;
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
@@ -61,8 +71,38 @@
                     >
                         <i class="fas fa-search mr-2"></i> 搜尋
                     </button>
+                    
+
+
                 </div>
-                <div class="search-options w-full max-w-3xl flex flex-wrap justify-start gap-4">
+                <!-- search mode checkbox -->
+                <div class="flex w-full max-w-3xl mb-4">
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" v-model="searchModePorter" class="form-checkbox h-5 w-5 text-blue-600">
+                        <span class="ml-2">使用Porter Stemmer</span>
+                    </label>
+                </div>
+                <!-- suggestions -->
+                <div v-if="suggestions.length > 0" class="flex w-full max-w-3xl mb-4">
+                    <ul>   
+                              <!-- show as inline pills of suggestions -->
+                        <li class="p-2">
+                            <span class="text-gray-600">
+                                找不到您要的結果，您可能要找的是:
+                            </span>
+                        </li>
+                        <li v-for="suggestion in suggestions" :key="suggestion" 
+                        class="p-2 hover:bg-blue-100 cursor-pointer text-blue-600 rounded-full inline-block" 
+                        @click="searchQuery = suggestion; searchDocuments(); suggestions = []">
+                            ${ suggestion }
+                        </li>
+                        <li class="p-2 hover:bg-blue-100 cursor-pointer text-blue-600 rounded-full inline-block" 
+                        @click="suggestions = []">
+                        清除建議
+                        </li>
+                    </ul>
+                </div>
+                <!-- <div class="search-options w-full max-w-3xl flex flex-wrap justify-start gap-4">
                     <div class="search-option">
                         <label class="inline-flex items-center">
                             <input type="checkbox" v-model="useAnd" @click="useOr=false" class="form-checkbox h-5 w-5 text-blue-600">
@@ -84,61 +124,177 @@
                         </label>
                         <input v-if="useNot" v-model="notTerms" class="mt-1 p-1 w-full border border-gray-300 rounded">
                     </div>
-                </div>
+                </div> -->
             </form>
         </div>
 
         <div v-if="searchResults.length > 0" class="search-results">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">搜尋結果 
+            <h2 class="text-2xl font-semibold text-gray-800 mb-1">搜尋結果 
                 <span class="text-sm text-gray-600">(${searchResults.length} 筆結果)</span>
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div v-for="result in searchResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6">
-                    <h3 class="text-xl font-semibold text-blue-600 mb-2">
-                        <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
-                    </h3>
-                    <div class="mb-4 space-y-1">
-                        <p class="text-gray-600"><span class="font-semibold">搜尋分數:</span> ${ result.score }</p>
-                        <p class="text-gray-600"><span class="font-semibold">字元數 (含空格):</span> ${ result.char_count_with_spaces }</p>
-                        <p class="text-gray-600"><span class="font-semibold">字元數 (不含空格):</span> ${ result.char_count_without_spaces }</p>
-                        <p class="text-gray-600"><span class="font-semibold">單字數:</span> ${ result.word_count }</p>
-                        <p class="text-gray-600"><span class="font-semibold">句子數:</span> ${ result.sentence_count }</p>
-                        <p class="text-gray-600"><span class="font-semibold">非ASCII字元數:</span> ${ result.non_ascii_char_count }</p>
-                        <p class="text-gray-600"><span class="font-semibold">非ASCII字元的單字數:</span> ${ result.non_ascii_word_count }</p>
+                <!-- show alert if lenght of searchResults is 1000 -->
+                <span v-if="searchResults.length == 1000" class="text-sm text-red-600">
+                    搜尋結果過多，僅顯示1000筆，請縮小搜尋範圍
+                </span>
+            </h2>            
+            <div class="mb-3 flex items-center space-x-3">
+                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" id="compareCheckbox" v-model="compareMode" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                    <label for="compareCheckbox" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                </div>
+                <label for="compareCheckbox" class="text-sm font-medium text-gray-900">Zipf比較</label>
+            </div>
+            
+
+            <div class="mb-2">
+                <canvas id="zipfDistributionChart"></canvas>
+            </div>
+
+            <button @click="toggleKeywordTable" class="mb-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                ${ showKeywordTable ? '隱藏關鍵字排名表' : '顯示關鍵字排名表' }
+            </button>
+
+            <div v-if="showKeywordTable" class="mb-8 overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">排名</th>
+                            <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">當前關鍵字 ${searchQuery}</th>
+                            <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">當前頻率</th>
+                            <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">前次關鍵字 ${previousSearchQueryHis[1]}</th>
+                            <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">前次頻率</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(entry, index) in combinedKeywordRankList" :key="index">
+                            <td class="px-4 py-2 whitespace-nowrap">${index + 1}</td>
+                            <td class="px-4 py-2 whitespace-nowrap">${entry.currentTerm || '-'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap">${entry.currentFrequency || '-'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap">${entry.previousTerm || '-'}</td>
+                            <td class="px-4 py-2 whitespace-nowrap">${entry.previousFrequency || '-'}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="flex">
+                <!-- Left Sidebar -->
+                <div class="w-1/5 bg-white rounded-lg shadow-md p-6 mr-6">
+                    <!-- Keyword Filter -->
+                    <div class="mb-6">
+                        <h3 class="font-semibold mb-2">關鍵字篩選</h3>
+                        <div class="space-y-2">
+                            <div v-for="v,k of uniqueKeywords" :key="k">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" :value="k" v-model="selectedKeywords" class="form-checkbox h-5 w-5 text-blue-600">
+                                    <span class="ml-2 text-gray-700">${k}
+                                        <span class="text-gray-500">(${v})</span>
+                                    </span>
+                                </label>
+                            </div>
+                            <button @click="toggleShowAllKeywords" class="mt-2 text-blue-600 hover:text-blue-800">
+                                ${ showAllKeywords ? '顯示較少' : '顯示更多' }
+                            </button>
+                        </div>
                     </div>
-                    <div class="mb-4">
-                        <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
-                        <div class="flex flex-wrap -m-1">
-                            <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
-                                <span class="font-medium mr-1">${ word }</span>
-                                <span class="text-gray-600">${ frequency }</span>
+                    
+
+                    <!-- Year Filter -->
+                    <div class="mb-6"> 
+                        <h3 class="font-semibold mb-2">年份篩選</h3>
+                        <div class="space-y-2">
+                            <div v-for="v, k of uniqueYears" :key="k">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" :value="k" v-model="selectedYears" class="form-checkbox h-5 w-5 text-blue-600">
+                                    <span class="ml-2 text-gray-700">${k} (${v})</span>
+                                </label>
                             </div>
                         </div>
                     </div>
-                    <div class="bg-gray-100 p-4 rounded-lg mb-4">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-2">標題</h4>
-                        <div v-html="result.title" class="text-gray-700"></div>
-                        <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">摘要</h4>
-                        <div class="text-sm text-gray-700" v-html="result.abstract"></div>
+
+                    <!-- Author Filter -->  
+                    <div class="mb-6">
+                        <h3 class="font-semibold mb-2">作者篩選</h3>
+                        <div class="space-y-2">
+                            <div v-for="author in uniqueAuthors" :key="author">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" :value="author" v-model="selectedAuthors" class="form-checkbox h-5 w-5 text-blue-600">
+                                    <span class="ml-2 text-gray-700">${author}</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mt-4">
-                        <button @click="confirmDelete(result.filename)" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out">
-                            <i class="fas fa-trash-alt mr-2"></i> 刪除
-                        </button>
+ 
+                    <!-- File Comparison -->
+                    <div>
+                        <h3 class="font-semibold mb-2">選擇比較文件</h3> 
+                        <div class="space-y-2">
+                            <div v-for="result in searchResults" :key="result.filename">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" :value="result.filename" v-model="selectedFiles" class="form-checkbox h-5 w-5 text-blue-600">
+                                    <span class="ml-2 text-gray-700">${result.filename}</span>
+                                </label>  
+                            </div>
+                        </div>                        
+                    </div>
+                </div>
+                
+                <!-- Search Results -->
+                <div class="w-4/5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div v-for="result in filteredResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" :value="result.filename" v-model="selectedFiles" class="form-checkbox h-5 w-5 text-blue-600">
+                            <span class="ml-2 text-gray-700">選擇比較文件</span>
+                        </label>
+                        <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                            <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
+                        </h3>
+                        <div class="mb-4 space-y-1">
+                            <p class="text-gray-600"><span class="font-semibold">搜尋分數:</span> ${ result.score }</p>
+                            <p class="text-gray-600"><span class="font-semibold">字元數 (含空格):</span> ${ result.char_count_with_spaces }</p>
+                            <p class="text-gray-600"><span class="font-semibold">字元數 (不含空格):</span> ${ result.char_count_without_spaces }</p>
+                            <p class="text-gray-600"><span class="font-semibold">單字數:</span> ${ result.word_count }</p>
+                            <p class="text-gray-600"><span class="font-semibold">句子數:</span> ${ result.sentence_count }</p>
+                            <p class="text-gray-600"><span class="font-semibold">非ASCII字元數:</span> ${ result.non_ascii_char_count }</p>
+                            <p class="text-gray-600"><span class="font-semibold">非ASCII字元的單字數:</span> ${ result.non_ascii_word_count }</p>
+                        </div>
+                        <div class="mb-4">
+                            <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
+                            <div class="flex flex-wrap -m-1">
+                                <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
+                                    <span class="font-medium mr-1">${ word }</span>
+                                    <span class="text-gray-600">${ frequency }</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                            <h4 class="text-lg font-semibold text-gray-800 mb-2">標題</h4>
+                            <div class="text-gray-700" v-html="highlightedText(result.title, selectedKeywords)"></div>
+                            <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">摘要</h4>
+                            <div class="text-sm text-gray-700" v-html="highlightedText(result.abstract, selectedKeywords)"></div>
+                            <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">作者</h4>
+                            <div class="text-sm text-gray-700" v-html="result.author"></div>
+                            <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">日期</h4> 
+                            <div class="text-sm text-gray-700" v-html="result.year"></div>
+                        </div>
+                        <div class="mt-4">
+                            <button @click="confirmDelete(result.filename)" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out">
+                                <i class="fas fa-trash-alt mr-2"></i> 刪除
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
         <p v-else-if="searchPerformed" class="text-gray-600 text-center py-8">沒有找到相關文件</p>
 
-        <!-- Upload Modal -->
-        <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="uploadModal" v-show="showModal" @click="closeModal">
+         <!-- Upload Modal -->
+         <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="uploadModal" v-show="showModal" @click="closeModal">
             <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" @click.stop>
                 <div class="mt-3 text-center">
                     <h3 class="text-lg leading-6 font-medium text-gray-900">上傳文件</h3>
                     <div class="mt-2 px-7 py-3">
-                        <form @submit.prevent="uploadFile" enctype="multipart/form-data">
-                            <input type="file" class="mb-4" ref="fileInput" required>
+                        <form @submit.prevent="uploadFiles" enctype="multipart/form-data">
+                            <input type="file" class="mb-4" ref="fileInput" multiple required>
                             <button type="submit" class="w-full px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
                                 上傳
                             </button>
@@ -150,23 +306,25 @@
 
         <!-- Upload Result Modal -->
         <div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" id="uploadResultModal" v-show="showResultModal" @click="closeResultModal">
-            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white" @click.stop>
+            <div class="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white" @click.stop>
                 <div class="mt-3 text-center">
                     <h3 class="text-lg leading-6 font-medium text-gray-900">上傳結果</h3>
-                    <div class="mt-2 px-7 py-3" v-if="uploadResult">
-                        <h4 class="text-md font-semibold mb-2">檔案名稱: <a :href="'/documents/' + uploadResult.filename" target="_blank" class="text-blue-600 hover:underline">${ uploadResult.filename }</a></h4>
-                        <p class="text-gray-600 mb-1">字元數 (含空格): ${ uploadResult.char_count_with_spaces }</p>
-                        <p class="text-gray-600 mb-1">字元數 (不含空格): ${ uploadResult.char_count_without_spaces }</p>
-                        <p class="text-gray-600 mb-1">單字數: ${ uploadResult.word_count }</p>
-                        <p class="text-gray-600 mb-1">句子數: ${ uploadResult.sentence_count }</p>
-                        <p class="text-gray-600 mb-1">非ASCII字元數: ${ uploadResult.non_ascii_char_count }</p>
-                        <p class="text-gray-600 mb-1">非ASCII字元的單字數: ${ uploadResult.non_ascii_word_count }</p>
-                        <h5 class="font-semibold text-gray-700 mt-4 mb-2">最常見的10個關鍵字:</h5>
-                        <ul class="list-disc list-inside text-gray-600">
-                            <li v-for="(frequency, word) in uploadResult.keyword_frequency" :key="word">
-                                ${ word }: ${ frequency }
-                            </li>
-                        </ul>
+                    <div class="mt-2 px-7 py-3" v-if="uploadResults.length > 0">
+                        <div v-for="result in uploadResults" :key="result.filename" class="mb-4 p-4 border rounded">
+                            <h4 class="text-md font-semibold mb-2">檔案名稱: <a :href="'/documents/' + result.filename" target="_blank" class="text-blue-600 hover:underline">${ result.filename }</a></h4>
+                            <p class="text-gray-600 mb-1">字元數 (含空格): ${ result.char_count_with_spaces }</p>
+                            <p class="text-gray-600 mb-1">字元數 (不含空格): ${ result.char_count_without_spaces }</p>
+                            <p class="text-gray-600 mb-1">單字數: ${ result.word_count }</p>
+                            <p class="text-gray-600 mb-1">句子數: ${ result.sentence_count }</p>
+                            <p class="text-gray-600 mb-1">非ASCII字元數: ${ result.non_ascii_char_count }</p>
+                            <p class="text-gray-600 mb-1">非ASCII字元的單字數: ${ result.non_ascii_word_count }</p>
+                            <h5 class="font-semibold text-gray-700 mt-4 mb-2">最常見的10個關鍵字:</h5>
+                            <ul class="list-disc list-inside text-gray-600">
+                                <li v-for="(frequency, word) in result.keyword_frequency" :key="word">
+                                    ${ word }: ${ frequency }
+                                </li>
+                            </ul>
+                        </div>
                     </div>
                     <div class="items-center px-4 py-3">
                         <button id="closeResultModal" class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300" @click="closeResultModal">
@@ -197,6 +355,10 @@
                 </div>
             </div>
         </div>
+        <div v-if="uploadProgress > 0 && uploadProgress < 100">
+            Uploading: {{ uploadProgress }}%
+            <progress :value="uploadProgress" max="100"></progress>
+          </div>
     </div>
 
     <footer class="bg-gray-200 text-center text-gray-600 py-4 px-3">
@@ -209,161 +371,434 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script>
         var app = new Vue({
-            el: '#app',
-            delimiters: ['${', '}'],
-            data: {
-                wordCloudData: [],
-                searchQuery: '',
-                searchResults: [],
-                searchPerformed: false,
-                uploadResult: null,
-                showModal: false,
-                showResultModal: false,
-                showDeleteModal: false,
-                documentToDelete: '',
-                useAnd: false,
-                useOr: false,
-                useNot: false,
-                andTerms: '',
-                orTerms: '',
-                notTerms: ''
-            },
-            methods: {
-                async searchDocuments() {
-                    let query = this.searchQuery;
+    el: '#app',
+    delimiters: ['${', '}'],
+    data: {
+        searchModePorter: true,
+        allKeywords: {},
+        showAllKeywords: false,
+        wordCloudData: [],
+        searchQuery: '',
+        searchResults: [],
+        uploadResults: [],
+        searchPerformed: false,
+        uploadResult: null,
+        showModal: false,
+        showResultModal: false,
+        showDeleteModal: false,
+        documentToDelete: '',
+        useAnd: false,
+        useOr: false,
+        useNot: false,
+        andTerms: '',
+        orTerms: '',
+        notTerms: '',
+        selectedKeywords: [],
+        selectedAuthors: [],
+        selectedYears: [],
+        selectedFiles: [],
+        uploadProgress: 0,
+        showKeywordTable: false,
+        keywordRankList: [],
+        zipfChart: null,
+        compareMode: false,
+        previousKeywordRankList: [],
+        combinedKeywordRankList: [],
+        previousSearchQueryHis: [], 
+        suggestions: []
+    },
+    computed: {
+        uniqueKeywords() {
+            var keywords = {};
+            const searchResults = this.searchResults;
+            
+            for (const file of searchResults) {
+                const fileKeywords = new Set();
+                
+                for (const keyword in file.keyword_frequency) {
+                    stemKeywod = stemWord(keyword);
+                    if (this.searchQuery.includes(stemKeywod)) {
+                        continue;
+                    }
+
+                    if (!keywords[keyword]) {
+                        keywords[keyword] = 0;
+                    }
                     
-                    if (this.useAnd && this.andTerms) {
-                        query += ` +(${this.andTerms})`;
-                    }
-                    if (this.useOr && this.orTerms) {
-                        query += ` |(${this.orTerms})`;
-                    }
-                    if (this.useNot && this.notTerms) {
-                        query += ` -${this.notTerms.replace(/\s+/g, ' -')}`;
-                    }
-
-                    try {
-                        const response = await axios.post('/search', { q: query });
-                        this.searchResults = response.data.results.map(result => ({
-                            ...result,
-                            char_count_with_spaces: result.char_count_with_spaces,
-                            char_count_without_spaces: result.char_count_without_spaces,
-                            word_count: result.word_count,
-                            sentence_count: result.sentence_count,
-                            non_ascii_char_count: result.non_ascii_char_count,
-                            non_ascii_word_count: result.non_ascii_word_count,
-                            keyword_frequency: result.keyword_frequency
-                        }));
-                        this.searchPerformed = true;
-                        this.generateWordCloudData();
-                        this.$nextTick(() => {
-                            this.renderWordCloud();
-                        });
-                    } catch (error) {
-                        console.error('Error during search:', error);
-                        alert(error.response.data.error);
-                    }
-                },
-                generateWordCloudData() {
-                    const allKeywords = {};
-                    this.searchResults.forEach(result => {
-                        Object.entries(result.keyword_frequency).forEach(([word, freq]) => {
-                            if (allKeywords[word]) {
-                                allKeywords[word] += freq;
-                            } else {
-                                allKeywords[word] = freq;
-                            }
-                        });
-                    });
-                    this.wordCloudData = Object.entries(allKeywords).map(([text, size]) => ({ text, size }));
-                },
-                renderWordCloud() {
-                    const width = document.querySelector('.search-header').offsetWidth;
-                    const height = 300; // Adjust this value as needed
-
-                    d3.select("#wordCloudBackground").selectAll("*").remove();
-
-                    const layout = d3.layout.cloud()
-                        .size([width, height])
-                        .words(this.wordCloudData)
-                        .padding(5)
-                        .rotate(() => ~~(Math.random() * 2) * 15)
-                        .font("Impact")
-                        .fontSize(d => Math.sqrt(d.size) * 10)
-                        .on("end", draw);
-
-                    layout.start();
-
-                    function draw(words) {
-                        d3.select("#wordCloudBackground").append("svg")
-                            .attr("width", layout.size()[0])
-                            .attr("height", layout.size()[1])
-                            .append("g")
-                            .attr("transform", "translate(" + layout.size()[0] / 2 + "," + layout.size()[1] / 2 + ")")
-                            .selectAll("text")
-                            .data(words)
-                            .enter().append("text")
-                            .style("font-size", d => d.size + "px")
-                            .style("font-family", "Impact")
-                            .style("fill", () => d3.schemeCategory10[Math.floor(Math.random() * 10)])
-                            .attr("text-anchor", "middle")
-                            .attr("transform", d => "translate(" + [d.x, d.y] + ")rotate(" + d.rotate + ")")
-                            .text(d => d.text);
-                    }
-                },
-                showUploadModal() {
-                    this.showModal = true;
-                },
-                closeModal() {
-                    this.showModal = false;
-                },
-                closeResultModal() {
-                    this.showResultModal = false;
-                },
-                async uploadFile() {
-                    const formData = new FormData();
-                    const file = this.$refs.fileInput.files[0];
-                    formData.append('file', file);
-
-                    try {
-                        const response = await axios.post('/upload', formData, {
-                            headers: {
-                                'Content-Type': 'multipart/form-data'
-                            }
-                        });
-                        this.uploadResult = response.data;
-                        this.showModal = false;
-                        this.showResultModal = true;
-                    } catch (error) {
-                        console.error('Error during file upload:', error);
-                        alert(error.response.data.error);
-                    }
-                },
-                confirmDelete(filename) {
-                    this.documentToDelete = filename;
-                    this.showDeleteModal = true;
-                },
-                closeDeleteModal() {
-                    this.showDeleteModal = false;
-                    this.documentToDelete = '';
-                },
-                async deleteDocument() {
-                    try {
-                        const response = await axios.post('/delete', { filename: this.documentToDelete });
-                        if (response.data.success) {
-                            this.searchResults = this.searchResults.filter(result => result.filename !== this.documentToDelete);
-                            this.closeDeleteModal();
-                            alert('文件已成功刪除');
-                        } else {
-                            alert('刪除文件時發生錯誤: ' + response.data.error);
-                        }
-                    } catch (error) {
-                        console.error('Error during document deletion:', error);
-                        alert('刪除文件時發生錯誤: ' + error.response.data.error);
+                    if (!fileKeywords.has(keyword)) {
+                        keywords[keyword] += 1;
+                        fileKeywords.add(keyword);
                     }
                 }
             }
-        });
+            keywords = Object.fromEntries(Object.entries(keywords).sort((a, b) => b[1] - a[1]));
+
+            if (!this.showAllKeywords) {
+                keywords = Object.fromEntries(Object.entries(keywords).slice(0, 10));
+            }
+            
+            return keywords;
+        },
+        uniqueAuthors() {
+            var authors = new Set(this.searchResults.map(result => result.author));
+            authors = Array.from(authors).map(author => author.split(',')).flat().map(author => author.trim());
+            authors = new Set(authors);
+
+            return Array.from(authors).sort();
+        },
+        uniqueYears() {
+            var yearList = this.searchResults.map(result => result.year.split('-')[0]);
+            var countList = yearList.reduce((acc, year) => {
+                acc[year] = (acc[year] || 0) + 1;
+                return acc;
+            }, {});
+            return Object.fromEntries(Object.entries(countList).sort((a, b) => a[0].localeCompare(b[0])));
+        },
+        filteredResults() {
+            return this.searchResults.filter(result => {
+                const keywordMatch = this.selectedKeywords.length === 0 || 
+                    Object.keys(result.keyword_frequency).some(keyword => this.selectedKeywords.includes(keyword));
+                
+                const authorMatch = this.selectedAuthors.length === 0 ||
+                    this.selectedAuthors.some(author => result.author.includes(author));
+                    
+                const yearMatch = this.selectedYears.length === 0 ||
+                    result.year.split('-').some(year => this.selectedYears.includes(year));
+
+                const fileMatch = this.selectedFiles.length < 2 ||
+                    this.selectedFiles.includes(result.filename);
+                return keywordMatch && authorMatch && yearMatch && fileMatch;
+            });
+        },
+        highlightedText() {
+            return (abstract, selectedKeywords) => {
+                const colors = ['bg-red-200', 'bg-blue-200', 'bg-green-200', 'bg-purple-200', 'bg-pink-200', 'bg-indigo-200', 'bg-gray-200', 'bg-orange-200', 'bg-teal-200'];
+                if (selectedKeywords.length === 0) {
+                    return abstract;
+                }
+                
+                const stemmedKeywords = selectedKeywords.map(keyword => stemWord(keyword));
+                      
+                var coorIndex = 0;
+                for (word of stemmedKeywords) {
+                    var color = colors[coorIndex % colors.length];
+                    coorIndex++;
+                    var highlightedAbstract = "";  
+                    var originAbstract = abstract;  
+                    var stemWordLength = word.length;
+                    var regex = new RegExp('(^|[\\s\'"({\\[])+' + word + '', 'gi');
+                    while (originAbstract.length > 0) {
+                        var index = originAbstract.search(regex);
+                        if (index == -1) {
+                            highlightedAbstract += originAbstract;
+                            originAbstract = '';
+                            break;
+                        } else {
+                            highlightedAbstract += originAbstract.substring(0, index+1);
+                            highlightedAbstract += originAbstract.substring(index, index+1)+ `<mark class="${color}">${originAbstract.substring(index+1, index+1 + stemWordLength)}</mark>`;
+                            originAbstract = originAbstract.substring(index+1 + stemWordLength);                                
+                        }
+                    }
+                    abstract = highlightedAbstract;
+                }
+                
+                return abstract;
+            };
+        }
+    },
+    methods: {
+        toggleKeywordTable() {
+            this.showKeywordTable = !this.showKeywordTable;
+        },
+        renderZipfDistributionChart() {
+            const ctx = document.getElementById('zipfDistributionChart').getContext('2d');
+
+            if (this.zipfChart) {
+                this.zipfChart.destroy();
+            }
+
+            const currentTermFrequencies = this.getTermFrequencies(this.searchResults);
+            const currentSortedFrequencies = Object.entries(currentTermFrequencies).sort((a, b) => b[1] - a[1]);
+
+            let datasets = [{
+                label: this.compareMode ? this.searchQuery : 'Term Frequency',
+                data: currentSortedFrequencies.map((entry, index) => ({ x: index + 1, y: entry[1] })),
+                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1,
+                pointRadius: 3
+            }];
+
+            if (this.compareMode && this.previousKeywordRankList.length > 0) {
+                const previousTermFrequencies = Object.fromEntries(this.previousKeywordRankList.map(item => [item.term, item.frequency]));
+                const previousSortedFrequencies = Object.entries(previousTermFrequencies).sort((a, b) => b[1] - a[1]);
+
+                datasets.push({
+                    label: this.previousSearchQueryHis[1],
+                    data: previousSortedFrequencies.map((entry, index) => ({ x: index + 1, y: entry[1] })),
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    pointRadius: 3
+                });
+            }
+
+            this.zipfChart = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets },
+                options: {
+                    scales: {
+                        x: {
+                            type: 'logarithmic',
+                            title: { display: true, text: 'Rank' }
+                        },
+                        y: {
+                            type: 'logarithmic',
+                            title: { display: true, text: 'Frequency' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const datasetLabel = context.dataset.label;
+                                    const index = context.dataIndex;
+                                    const term = datasetLabel === 'Current Search'
+                                        ? currentSortedFrequencies[index][0]
+                                        : this.previousKeywordRankList[index].term;
+                                    const frequency = context.formattedValue;
+                                    return `${datasetLabel}: Term: ${term}, Frequency: ${frequency}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            this.updateCombinedKeywordRankList(currentSortedFrequencies);
+        },
+
+        updateCombinedKeywordRankList(currentSortedFrequencies) {
+            const currentKeywordRankList = currentSortedFrequencies.map(([term, frequency]) => ({ term, frequency }));
+            
+            if (this.compareMode && this.previousKeywordRankList.length > 0) {
+                const maxLength = Math.max(currentKeywordRankList.length, this.previousKeywordRankList.length);
+                
+                this.combinedKeywordRankList = Array(maxLength).fill(null).map((_, index) => {
+                    const currentItem = currentKeywordRankList[index];
+                    const previousItem = this.previousKeywordRankList[index];
+                    return {
+                        currentTerm: currentItem ? currentItem.term : null,
+                        currentFrequency: currentItem ? currentItem.frequency : null,
+                        previousTerm: previousItem ? previousItem.term : null,
+                        previousFrequency: previousItem ? previousItem.frequency : null
+                    };
+                });
+            } else {
+                this.combinedKeywordRankList = currentKeywordRankList.map(item => ({
+                    currentTerm: item.term,
+                    currentFrequency: item.frequency,
+                    previousTerm: null,
+                    previousFrequency: null
+                }));
+            }
+        },
+
+        getTermFrequencies(searchResults) {
+            const termFrequencies = {};
+            searchResults.forEach(result => {
+                Object.entries(result.keyword_frequency).forEach(([term, freq]) => {
+                    termFrequencies[term] = (termFrequencies[term] || 0) + freq;
+                });
+            });
+            return termFrequencies;
+        },
+        toggleShowAllKeywords() {
+            this.showAllKeywords = !this.showAllKeywords;
+        },
+        async searchDocuments() {
+           if (this.compareMode) {
+                this.previousKeywordRankList = this.combinedKeywordRankList.map(item => ({
+                    term: item.currentTerm,
+                    frequency: item.currentFrequency
+                })).filter(item => item.term !== null && item.frequency !== null);
+            } else {
+                this.previousKeywordRankList = [];
+            }
+            // add to the first element
+            this.previousSearchQueryHis.unshift(this.searchQuery+(this.searchModePorter? ' (P*)': ''));
+
+            let query = this.searchQuery;
+            
+            if (this.useAnd && this.andTerms) {
+                query += ` +(${this.andTerms})`;
+            }
+            if (this.useOr && this.orTerms) {
+                query += ` |(${this.orTerms})`;
+            }
+            if (this.useNot && this.notTerms) {
+                query += ` -${this.notTerms.replace(/\s+/g, ' -')}`;
+            }
+            porter = this.searchModePorter;
+
+            try {
+                const response = await axios.post('/search', { q: query, porter: porter });
+
+                if (response.data.results.length === 0) {
+                    console.log ( response.data);
+
+                //     'results': [],
+                // 'suggestions': suggestions,
+                    this.suggestions = response.data.suggestions;                    
+                }
+                this.searchResults = response.data.results.map(result => ({
+                    ...result,
+                    char_count_with_spaces: result.char_count_with_spaces,
+                    char_count_without_spaces: result.char_count_without_spaces,
+                    word_count: result.word_count,
+                    sentence_count: result.sentence_count,
+                    non_ascii_char_count: result.non_ascii_char_count,
+                    non_ascii_word_count: result.non_ascii_word_count,
+                    keyword_frequency: result.keyword_frequency
+                }));
+                this.searchPerformed = true;
+                if (this.searchResults.length > 0) {
+                    this.generateWordCloudData();
+                    this.$nextTick(() => {
+                        this.renderWordCloud();
+                        this.renderZipfDistributionChart();
+                    });
+                } else {
+                    this.wordCloudData = [];
+                    this.zipfChart = null;
+                    // remove the first element
+                    this.previousSearchQueryHis.shift();
+                }
+                
+            } catch (error) {
+                console.error('Error during search:', error);
+                alert(error.response.data.error);
+            }
+        },
+        generateWordCloudData() {
+            const allKeywords = {};
+            this.searchResults.forEach(result => {
+                Object.entries(result.keyword_frequency).forEach(([word, freq]) => {
+                    if (allKeywords[word]) {
+                        allKeywords[word] += freq;
+                    } else {
+                        allKeywords[word] = freq;
+                    }
+                });
+            });
+            this.wordCloudData = Object.entries(allKeywords).map(([text, size]) => ({ text, size }));
+        },
+        renderWordCloud() {
+            const width = document.querySelector('.search-header').offsetWidth;
+            const height = 300;
+
+            d3.select("#wordCloudBackground").selectAll("*").remove();
+
+            const layout = d3.layout.cloud()
+                .size([width, height])
+                .words(this.wordCloudData)
+                .padding(5)
+                .rotate(() => ~~(Math.random() * 2) * 15)
+                .font("Impact")
+                .fontSize(d => Math.sqrt(d.size) * 10)
+                .on("end", draw);
+
+            layout.start();
+
+            function draw(words) {
+                d3.select("#wordCloudBackground").append("svg")
+                    .attr("width", layout.size()[0])
+                    .attr("height", layout.size()[1])
+                    .append("g")
+                    .attr("transform", "translate(" + layout.size()[0] / 2 + "," + layout.size()[1] / 2 + ")")
+                    .selectAll("text")
+                    .data(words)
+                    .enter().append("text")
+                    .style("font-size", d => d.size + "px")
+                    .style("font-family", "Impact")
+                    .style("fill", () => d3.schemeCategory10[Math.floor(Math.random() * 10)])
+                    .attr("text-anchor", "middle")
+                    .attr("transform", d => "translate(" + [d.x, d.y] + ")rotate(" + d.rotate + ")")
+                    .text(d => d.text);
+            }
+        },
+        showUploadModal() {
+            this.showModal = true;
+        },
+        closeModal() {
+            this.showModal = false;
+        },
+        closeResultModal() {
+            this.showResultModal = false;
+        },
+        async uploadFiles() {
+            const files = this.$refs.fileInput.files;
+            const batchSize = 100;
+            let allResults = [];
+
+            for (let i = 0; i < files.length; i += batchSize) {
+                const batch = Array.from(files).slice(i, i + batchSize);
+                const formData = new FormData();
+                
+                batch.forEach(file => {
+                    formData.append('files', file);
+                });
+
+                try {
+                    const response = await axios.post('/upload_batch', formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        }
+                    });
+                    allResults = allResults.concat(response.data);
+                    
+                    this.uploadProgress = Math.min(100, Math.round(((i + batch.length) / files.length) * 100));
+                } catch (error) {
+                    console.error('Error during batch upload:', error);
+                    if (error.response && error.response.data && error.response.data.error) {
+                        alert(error.response.data.error);
+                    } else {
+                        alert('An error occurred during file upload.');
+                    }
+                }
+            }
+
+            this.uploadResults = allResults;
+            this.showModal = false;
+            this.showResultModal = true;
+            this.uploadProgress = 100;
+        },
+        confirmDelete(filename) {
+            this.documentToDelete = filename;
+            this.showDeleteModal = true;
+        },
+        closeDeleteModal() {
+            this.showDeleteModal = false;
+            this.documentToDelete = '';
+        },
+        async deleteDocument() {
+            try {
+                const response = await axios.post('/delete', { filename: this.documentToDelete });
+                if (response.data.success) {
+                    this.searchResults = this.searchResults.filter(result => result.filename !== this.documentToDelete);
+                    this.closeDeleteModal();
+                    alert('文件已成功刪除');
+                } else {
+                    alert('刪除文件時發生錯誤: ' + response.data.error);
+                }
+            } catch (error) {
+                console.error('Error during document deletion:', error);
+                alert('刪除文件時發生錯誤: ' + error.response.data.error);
+            }
+        },
+    }
+});
     </script>
 </body>
 </html>
