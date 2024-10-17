@@ -15,6 +15,7 @@
         <header class="mb-8">
             <h1 class="text-4xl font-bold text-gray-800 mb-2">Tungo 文件列表</h1>
             <p class="text-gray-600">檢視和管理您的文件庫</p>
+            <p class="text-gray-600">總文件數：${totalDocuments}</p>
         </header>
 
         <div class="mb-4 flex justify-between items-center">
@@ -57,7 +58,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="doc in documents" :key="doc.filename">
+                    <tr v-for="doc in paginatedDocuments" :key="doc.filename">
                         <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
                             <a :href="'/documents/' + doc.filename" target="_blank" class="text-blue-600 hover:underline">
                                 ${ doc.filename }
@@ -89,6 +90,24 @@
                     </tr>
                 </tbody>
             </table>
+            <div class="mt-6 flex justify-between items-center">
+                <div>
+                    顯示 ${startIndex + 1} 到 ${endIndex} 共 ${totalDocuments} 筆結果
+                </div>
+                <div class="flex space-x-2">
+                    <button @click="changePage(currentPage - 1)" 
+                            :disabled="currentPage === 1"
+                            class="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">
+                        上一頁
+                    </button>
+                    <span class="px-4 py-2">第 ${currentPage} 頁，共 ${totalPages} 頁</span>
+                    <button @click="changePage(currentPage + 1)" 
+                            :disabled="currentPage === totalPages"
+                            class="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">
+                        下一頁
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Delete Confirmation Modal -->
@@ -130,7 +149,9 @@
                 showDeleteModal: false,
                 documentToDelete: '',
                 sortKey: '',
-                sortOrder: 'asc'
+                sortOrder: 'asc',
+                currentPage: 1,
+                itemsPerPage: 10,
             },
             methods: {
                 async fetchDocuments() {
@@ -185,6 +206,30 @@
                         }
                         return this.sortOrder === 'desc' ? comparison * -1 : comparison;
                     });
+                },
+                changePage(newPage) {
+                    if (newPage >= 1 && newPage <= this.totalPages) {
+                        this.currentPage = newPage;
+                    }
+                }
+            },
+            computed: {
+                totalDocuments() {
+                    return this.documents.length;
+                },
+                totalPages() {
+                    return Math.ceil(this.totalDocuments / this.itemsPerPage);
+                },
+                paginatedDocuments() {
+                    const start = (this.currentPage - 1) * this.itemsPerPage;
+                    const end = start + this.itemsPerPage;
+                    return this.documents.slice(start, end);
+                },
+                startIndex() {
+                    return (this.currentPage - 1) * this.itemsPerPage;
+                },
+                endIndex() {
+                    return Math.min(this.startIndex + this.itemsPerPage, this.totalDocuments);
                 }
             },
             mounted() {

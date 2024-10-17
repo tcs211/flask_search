@@ -575,8 +575,8 @@ def process_query_terms(query, results, indexKey=indexKeys[0], mode='AND', porte
             if mode == 'OR':
                 for doc_id in index[indexKey][token]:
                     # limit the number of matches to 1000
-                    if len(results) >= 1000:
-                        break
+                    # if len(results) >= 1000:
+                    #     break
                     # print('doc_id:', doc_id, 'token:', token, 'score:', len(index[indexKey][token][doc_id]))
                     results[doc_id]['score'] += len(index[indexKey][token][doc_id])
                     results[doc_id]['matches'][token] = len(index[indexKey][token][doc_id])
@@ -593,7 +593,7 @@ def process_query_terms(query, results, indexKey=indexKeys[0], mode='AND', porte
     
     if mode == 'AND':
         # limit the number of matches to 1000
-        matching_docs = list(matching_docs)[:1000]
+        # matching_docs = list(matching_docs)[:1000]
         # Update scores only for documents that match all tokens
         for doc_id in matching_docs:
             for token in query_tokens:
