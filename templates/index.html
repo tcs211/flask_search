@@ -136,7 +136,7 @@
 
         <div v-if="searchResults.length > 0" class="search-results">
             <h2 class="text-2xl font-semibold text-gray-800 mb-1">搜尋結果 
-                <span class="text-sm text-gray-600">(${searchResults.length} 筆結果)</span>
+                <span class="text-sm text-gray-600">(${filteredResults.length} 筆結果)</span>
                 <!-- show alert if lenght of searchResults is 1000 -->
                 <!-- <span v-if="searchResults.length == 1000" class="text-sm text-red-600">
                     搜尋結果過多，僅顯示1000筆，請縮小搜尋範圍
@@ -227,11 +227,11 @@
                         <div class="mb-6">
                             <h3 class="font-semibold mb-2">關鍵字篩選</h3>
                             <div class="space-y-2">
-                                <div v-for="v,k of uniqueKeywords" :key="k">
+                                <div v-for="item of showAllKeywords ? currentKeywordRankList : currentKeywordRankList.slice(0, 15)">
                                     <label class="inline-flex items-center">
-                                        <input type="checkbox" :value="k" v-model="selectedKeywords" class="form-checkbox h-5 w-5 text-blue-600">
-                                        <span class="ml-2 text-gray-700">${k}
-                                            <span class="text-gray-500">(${v})</span>
+                                        <input type="checkbox" :value="item.term" v-model="selectedKeywords" class="form-checkbox h-5 w-5 text-blue-600">
+                                        <span class="ml-2 text-gray-700">${item.term}</span>
+                                            <span class="text-gray-500">(${item.frequency})</span>
                                         </span>
                                     </label>
                                 </div>
@@ -283,61 +283,63 @@
                     </div>
                     
                     <!-- Search Results -->
-                    <div class="w-4/5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="w-4/5">
+                        <div class=" grid grid-cols-1 md:grid-cols-2 gap-6">
                         
-                        <div v-for="result in paginatedResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6">
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" :value="result.filename" v-model="selectedFiles" class="form-checkbox h-5 w-5 text-blue-600">
-                                <span class="ml-2 text-gray-700">選擇比較文件</span>
-                            </label>
-                            <h3 class="text-xl font-semibold text-blue-600 mb-2">
-                                <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
-                            </h3>
-                            <div class="mb-4 space-y-1">
-                                <p class="text-gray-600"><span class="font-semibold">搜尋分數:</span> ${ result.score }</p>
-                                <p class="text-gray-600"><span class="font-semibold">字元數 (含空格):</span> ${ result.char_count_with_spaces }</p>
-                                <p class="text-gray-600"><span class="font-semibold">字元數 (不含空格):</span> ${ result.char_count_without_spaces }</p>
-                                <p class="text-gray-600"><span class="font-semibold">單字數:</span> ${ result.word_count }</p>
-                                <p class="text-gray-600"><span class="font-semibold">句子數:</span> ${ result.sentence_count }</p>
-                                <p class="text-gray-600"><span class="font-semibold">非ASCII字元數:</span> ${ result.non_ascii_char_count }</p>
-                                <p class="text-gray-600"><span class="font-semibold">非ASCII字元的單字數:</span> ${ result.non_ascii_word_count }</p>
-                            </div>
-                            <div class="mb-4">
-                                <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
-                                <div class="flex flex-wrap -m-1">
-                                    <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
-                                        <span class="font-medium mr-1">${ word }</span>
-                                        <span class="text-gray-600">${ frequency }</span>
+                            <div v-for="result in paginatedResults" :key="result.filename" class="bg-white rounded-lg shadow-md p-6">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" :value="result.filename" v-model="selectedFiles" class="form-checkbox h-5 w-5 text-blue-600">
+                                    <span class="ml-2 text-gray-700">選擇比較文件</span>
+                                </label>
+                                <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                                    <a :href="'/documents/' + result.filename" target="_blank" class="hover:underline">${ result.filename }</a>
+                                </h3>
+                                <div class="mb-4 space-y-1">
+                                    <p class="text-gray-600"><span class="font-semibold">搜尋分數:</span> ${ result.score }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">字元數 (含空格):</span> ${ result.char_count_with_spaces }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">字元數 (不含空格):</span> ${ result.char_count_without_spaces }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">單字數:</span> ${ result.word_count }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">句子數:</span> ${ result.sentence_count }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">非ASCII字元數:</span> ${ result.non_ascii_char_count }</p>
+                                    <p class="text-gray-600"><span class="font-semibold">非ASCII字元的單字數:</span> ${ result.non_ascii_word_count }</p>
+                                </div>
+                                <div class="mb-4">
+                                    <h4 class="font-semibold text-gray-700 mb-2">最常見的10個關鍵字:</h4>
+                                    <div class="flex flex-wrap -m-1">
+                                        <div v-for="(frequency, word) in result.keyword_frequency" :key="word" class="m-1 px-3 py-1 bg-gray-200 rounded-full text-sm flex items-center">
+                                            <span class="font-medium mr-1">${ word }</span>
+                                            <span class="text-gray-600">${ frequency }</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="bg-gray-100 p-4 rounded-lg mb-4">
-                                <h4 class="text-lg font-semibold text-gray-800 mb-2">標題</h4>
-                                <div class="text-gray-700" v-html="highlightedText(result.title, selectedKeywords)"></div>
-                                <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">摘要</h4>
-                                <div class="text-sm text-gray-700" v-html="highlightedText(result.abstract, selectedKeywords)"></div>
-                                <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">作者</h4>
-                                <div class="text-sm text-gray-700" v-html="result.author"></div>
-                                <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">日期</h4> 
-                                <div class="text-sm text-gray-700" v-html="result.year"></div>
-                            </div>
-                            <div class="mt-4">
-                                <button @click="confirmDelete(result.filename)" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out">
-                                    <i class="fas fa-trash-alt mr-2"></i> 刪除
-                                </button>
+                                <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                                    <h4 class="text-lg font-semibold text-gray-800 mb-2">標題</h4>
+                                    <div class="text-gray-700" v-html="highlightedText(result.title, selectedKeywords)"></div>
+                                    <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">摘要</h4>
+                                    <div class="text-sm text-gray-700" v-html="highlightedText(result.abstract, selectedKeywords)"></div>
+                                    <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">作者</h4>
+                                    <div class="text-sm text-gray-700" v-html="result.author"></div>
+                                    <h4 class="text-lg font-semibold text-gray-800 mt-4 mb-2">日期</h4> 
+                                    <div class="text-sm text-gray-700" v-html="result.year"></div>
+                                </div>
+                                <div class="mt-4">
+                                    <button @click="confirmDelete(result.filename)" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out">
+                                        <i class="fas fa-trash-alt mr-2"></i> 刪除
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <div class="mt-6 flex justify-center items-center space-x-4">
+                        <div class="mt-6 flex justify-center items-center space-x-4 w-full">
                             <button @click="changePage(currentPage - 1)" 
                                     :disabled="currentPage === 1"
                                     class="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">
-                                Previous
+                                前一頁
                             </button>
                             <span>Page ${currentPage} of ${totalPages}</span>
                             <button @click="changePage(currentPage + 1)" 
                                     :disabled="currentPage === totalPages"
                                     class="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50">
-                                Next
+                                下一頁
                             </button>
                         </div>
                     </div>
@@ -473,7 +475,7 @@
         previousSearchQueryHis: [], 
         suggestions: [],
         currentPage: 1,
-        resultsPerPage: 100,
+        resultsPerPage: 20,
     },
     watch: {
         showZipfChart() {
@@ -499,37 +501,6 @@
         currentKeyWordsCount() {
             return this.currentKeywordRankList.length;
         },
-        uniqueKeywords() {
-            var keywords = {};
-            const searchResults = this.searchResults;
-            
-            for (const file of searchResults) {
-                const fileKeywords = new Set();
-                
-                for (const keyword in file.keyword_frequency) {
-                    stemKeywod = stemWord(keyword);
-                    if (this.searchQuery.includes(stemKeywod)) {
-                        continue;
-                    }
-
-                    if (!keywords[keyword]) {
-                        keywords[keyword] = 0;
-                    }
-                    
-                    if (!fileKeywords.has(keyword)) {
-                        keywords[keyword] += 1;
-                        fileKeywords.add(keyword);
-                    }
-                }
-            }
-            keywords = Object.fromEntries(Object.entries(keywords).sort((a, b) => b[1] - a[1]));
-
-            if (!this.showAllKeywords) {
-                keywords = Object.fromEntries(Object.entries(keywords).slice(0, 10));
-            }
-            
-            return keywords;
-        },
         uniqueAuthors() {
             var authors = new Set(this.searchResults.map(result => result.author));
             authors = Array.from(authors).map(author => author.split(',')).flat().map(author => author.trim());
@@ -547,8 +518,9 @@
         },
         filteredResults() {
             return this.searchResults.filter(result => {
+                // all selected keywords must be present in the result
                 const keywordMatch = this.selectedKeywords.length === 0 || 
-                    Object.keys(result.keyword_frequency).some(keyword => this.selectedKeywords.includes(keyword));
+                    this.selectedKeywords.every(keyword => result.keyword_frequency.hasOwnProperty(keyword));
                 
                 const authorMatch = this.selectedAuthors.length === 0 ||
                     this.selectedAuthors.some(author => result.author.includes(author));
@@ -558,6 +530,7 @@
 
                 const fileMatch = this.selectedFiles.length < 2 ||
                     this.selectedFiles.includes(result.filename);
+                
                 return keywordMatch && authorMatch && yearMatch && fileMatch;
             });
         },
@@ -598,7 +571,7 @@
         },
         
         totalResults() {
-            return this.searchResults.length;
+            return this.filteredResults.length;
         },
         totalPages() {
             return Math.ceil(this.totalResults / this.resultsPerPage);
