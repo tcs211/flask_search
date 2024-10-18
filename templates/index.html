@@ -81,7 +81,7 @@
                         <input type="checkbox" v-model="searchModePorter" class="form-checkbox h-5 w-5 text-blue-600">
                         <span class="ml-2">使用Porter Stemmer</span>
                     </label>
-                    <label class="inline-flex items-center">
+                    <label class="inline-flex items-center ml-2">
                         <input type="checkbox" v-model="showZipfChart" 
                         class="form-checkbox h-5 w-5 text-blue-600">
                         <span class="ml-2">結果以Zipf分佈圖顯示</span>
@@ -151,16 +151,15 @@
                         <input type="checkbox" id="compareCheckbox" v-model="compareMode" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
                         <label for="compareCheckbox" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                     </div>
-                    <label for="compareCheckbox" class="text-sm font-medium text-gray-900">
-                        Zipf比較</label>
-                </div>
-                <div class="mb-3 flex items-center space-x-3">
+                    <label for="compareCheckbox" class="text-lg font-medium text-gray-900">
+                        最近二次比較</label>
+                
                     <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
                         <input type="checkbox" id="logCheckbox" v-model="logScale"
                         class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
                         <label for="logCheckbox" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                     </div>
-                    <label for="compareCheckbox" class="text-sm font-medium text-gray-900">
+                    <label for="compareCheckbox" class="text-lg font-medium text-gray-900">
                         Log Scale</label>
                 </div>
                 
@@ -178,17 +177,20 @@
                     <table class="min-w-full bg-white">
                         <thead>
                             <tr>
-                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">當前文件數量</th>
-                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">當前關鍵字數量</th>
-                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">前次文件數量</th>
-                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">前次關鍵字數量</th>
+                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">搜尋關鍵字</th>
+                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">文件數量</th>
+                                <th class="px-4 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">關鍵字數量</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
+                                <td class="px-4 py-2 whitespace-nowrap">${previousSearchQueryHis[0]}</td>
                                 <td class="px-4 py-2 whitespace-nowrap">${searchResults.length}</td>
                                 <td class="px-4 py-2 whitespace-nowrap">${currentKeyWordsCount}</td>
-                                <td class="px-4 py-2 whitespace-nowrap">${previousKeywordRankList.length}</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2 whitespace-nowrap">${previousSearchQueryHis[1]}</td>                                
+                                <td class="px-4 py-2 whitespace-nowrap">${previousDocumentCount}</td>
                                 <td class="px-4 py-2 whitespace-nowrap">${previousKeyWordsCount}</td>
                             </tr>
                         
@@ -465,6 +467,7 @@
         showKeywordTable: false,
         currentKeywordRankList: [],
         previousKeywordRankList: [],
+        previousKeyWordsCount: 0,
         previousDocumentCount: 0,
         combinedKeywordRankList: [],
         previousSearchQueryHis: [], 
@@ -492,9 +495,7 @@
         },
     },
     computed: {
-        previousKeyWordsCount() {
-            return this.previousKeywordRankList.length;
-        },
+        
         currentKeyWordsCount() {
             return this.currentKeywordRankList.length;
         },
@@ -619,12 +620,10 @@
                 this.zipfChart.destroy();
             }
 
-            const currentTermFrequencies = this.getTermFrequencies(this.searchResults);
-            const currentSortedFrequencies = Object.entries(currentTermFrequencies).sort((a, b) => b[1] - a[1]);
 
             let datasets = [{
                 label: this.compareMode ? this.previousSearchQueryHis[0] : 'Term Frequency',
-                data: currentSortedFrequencies.map((entry, index) => ({ x: index + 1, y: entry[1] })),
+                data: this.currentKeywordRankList.map((item, index) => ({ x: index + 1, y: item.frequency })),
                 backgroundColor: 'rgba(75, 192, 192, 0.6)',
                 borderColor: 'rgba(75, 192, 192, 1)',
                 borderWidth: 1,
@@ -678,7 +677,6 @@
                 }
             });
 
-            this.updateCombinedKeywordRankList(currentSortedFrequencies);
         },
 
         updateCombinedKeywordRankList(currentSortedFrequencies) {
@@ -728,6 +726,7 @@
                     frequency: item.currentFrequency
                 })).filter(item => item.term !== null && item.frequency !== null);
                 this.previousDocumentCount = this.searchResults.length;
+                this.previousKeyWordsCount = this.currentKeyWordsCount;
             } else {
                 this.previousKeywordRankList = [];
             }
@@ -768,8 +767,10 @@
                     keyword_frequency: result.keyword_frequency
                 }));
                 this.searchPerformed = true;
-                if (this.searchResults.length > 0) {
-                    this.generateWordCloudData();
+                if (this.searchResults.length > 0) {           
+                    const currentTermFrequencies = this.getTermFrequencies(this.searchResults); 
+                    const currentSortedFrequencies = Object.entries(currentTermFrequencies).sort((a, b) => b[1] - a[1]);        
+                    this.updateCombinedKeywordRankList(currentSortedFrequencies);
                     this.$nextTick(() => {
                         this.renderWordCloud();
                         if (this.showZipfChart) {
@@ -788,20 +789,20 @@
                 alert(error.response.data.error);
             }
         },
-        generateWordCloudData() {
-            const allKeywords = {};
-            this.searchResults.forEach(result => {
-                Object.entries(result.keyword_frequency).forEach(([word, freq]) => {
-                    if (allKeywords[word]) {
-                        allKeywords[word] += freq;
-                    } else {
-                        allKeywords[word] = freq;
-                    }
-                });
-            });
-            this.wordCloudData = Object.entries(allKeywords).map(([text, size]) => ({ text, size }));
-        },
         renderWordCloud() {
+            const allKeywords = {};
+            // draw 100 most frequent keywords
+            this.currentKeywordRankList.slice(0, 100).forEach(item => {
+                allKeywords[item.term] = item.frequency;
+            });         
+            // normalize the frequency of keywords to 1-10, square root scale
+            wordCloudData = Object.entries(allKeywords).map(
+                ([text, size]) => ({ text, size: Math.log(size) + 1 })         
+            );
+            max = Math.max(...wordCloudData.map(d => d.size));
+            min = Math.min(...wordCloudData.map(d => d.size));
+            wordCloudData = wordCloudData.map(d => ({ text: d.text, size: 1 + 49 * (d.size - min) / (max - min) }));
+            console.log(wordCloudData);
             const width = document.querySelector('.search-header').offsetWidth;
             const height = 300;
 
@@ -809,11 +810,11 @@
 
             const layout = d3.layout.cloud()
                 .size([width, height])
-                .words(this.wordCloudData)
+                .words(wordCloudData)
                 .padding(5)
                 .rotate(() => ~~(Math.random() * 2) * 15)
                 .font("Impact")
-                .fontSize(d => Math.sqrt(d.size) * 10)
+                .fontSize(d => d.size)
                 .on("end", draw);
 
             layout.start();
