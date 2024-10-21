@@ -69,7 +69,12 @@
                         type="submit" 
                         class="whitespace-nowrap bg-gray-500 hover:bg-gray-600 text-white font-bold px-6 py-2 rounded-r-md transition duration-300 ease-in-out"
                     >
-                        <i class="fas fa-search mr-2"></i> 搜尋
+                        <template v-if="isSearching">
+                            <i class="fas fa-spinner fa-spin mr-2"></i> 搜尋中...
+                        </template>
+                        <template v-else>
+                            <i class="fas fa-search mr-2"></i> 搜尋
+                        </template>
                     </button>
                     
 
@@ -476,6 +481,7 @@
         suggestions: [],
         currentPage: 1,
         resultsPerPage: 20,
+        isSearching: false,
     },
     watch: {
         showZipfChart() {
@@ -720,8 +726,9 @@
             porter = this.searchModePorter;
 
             try {
+                this.isSearching = true;
                 const response = await axios.post('/search', { q: query, porter: porter });
-
+                this.isSearching = false;
                 if (response.data.results.length === 0) {
                     console.log ( response.data);
 
@@ -758,6 +765,7 @@
                 }
                 
             } catch (error) {
+                this.isSearching = false;
                 console.error('Error during search:', error);
                 alert(error.response.data.error);
             }
