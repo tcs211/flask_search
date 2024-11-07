@@ -493,7 +493,7 @@
                         }
                         this.isGeneratingPlot = true;
                         const response = await axios.post(`/api/plot/${plotType}`, params);
-                        this.plotImage = response.data.image;
+                        this.isGeneratingPlot = false;
                         this.plotImage = response.data.image;
                     } catch (error) {
                         this.plotImage = null;

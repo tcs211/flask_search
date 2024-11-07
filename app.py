@@ -60,6 +60,7 @@ if root_path == '/home/www':
     nltk.download('punkt_tab', download_dir=nltk_path)
     nltk.download('stopwords', download_dir=nltk_path)
     nltk.download('wordnet', download_dir=nltk_path)
+    nltk.download('omw-1.4', download_dir=nltk_path)
 else: 
     # windows和pythonanywhere用此路徑
     nltk.download('punkt')
