@@ -3,3 +3,13 @@ local_database.json
 local_database_non_porter.json
 pubmed/
 pubmed2/
+__pycache__
+word_to_vec_model.py
+word2vec.model
+word2vec.model.syn1neg.npy
+word2vec.model.wv.vectors.npy
+wordtovec.ipynb
+test.ipynb
+medical_map.py
+llama.py
+ICD-10-CM_2023.csv

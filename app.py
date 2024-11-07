@@ -15,12 +15,30 @@ import ssl
 import sys
 import string
 import Levenshtein
+import io
+
+import base64
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import matplotlib.pyplot as plt
+from flask import Response
+from word_to_vec_model_pubmed import load_documents, PubmedProcessor, VectorVisualizer, AdvancedVisualizer
 
 # 起始app
 app = Flask(__name__, static_folder='javascript')
 app.config['MAX_CONTENT_LENGTH'] = 1000 * 1024 * 1024  # 1000 MB limit
 root_path = os.path.dirname(os.path.abspath(__file__))
 print(root_path)
+
+
+# Global variables to store processors for different datasets
+processors = {
+    'caregiver': None,
+    'psychosis': None
+}
+
+
+
+
 # cors防止跨域
 CORS(app, resources={r"/*": 
                      {"origins": "*",
@@ -54,6 +72,144 @@ lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
 english_stop_words = set(stopwords.words('english'))
 
+@app.route('/w2v')
+def index():
+    return render_template('w2v.html')
+
+@app.route('/api/train', methods=['POST'])
+def train_model():
+    data = request.json
+    dataset = data['dataset']
+    params = data['params']
+    
+    def generate():
+        try:
+            # Load documents based on dataset selection
+            folder_path = os.path.join(root_path, 'pubmed_ad_cargiver222324') if dataset == 'caregiver' else os.path.join(root_path, 'pubmed_ad_psychosis')
+            yield json.dumps({"status": "loading", "message": "Loading documents..."}) + "\n"
+            
+            documents = load_documents(folder_path)
+            yield json.dumps({"status": "processing", "message": "Processing documents..."}) + "\n"
+            
+            # Initialize processor
+            processor = PubmedProcessor()
+            processor.load_documents(documents)
+            
+            yield json.dumps({"status": "training", "message": "Training Word2Vec model..."}) + "\n"
+            
+            # Train model with parameters
+            processor.train_word2vec(
+                vector_size=int(params['vectorSize']),
+                window=int(params['windowSize']),
+                min_count=int(params['minCount']),
+                sg=int(params['architecture'])
+            )
+            
+            # Store processor globally
+            processors[dataset] = processor
+
+            # get document count, word count, and vocabulary size
+            document_count = processor.model.corpus_count
+            word_count = processor.model.corpus_total_words
+            vocabulary_size = len(processor.model.wv.key_to_index)
+
+            
+            yield json.dumps({"status": "complete", "message": "Training complete!\n文件數量: {}\n總字數: {}\n詞彙數: {}".format(document_count, word_count, vocabulary_size)}) + "\n"
+            
+        except Exception as e:
+            yield json.dumps({"status": "error", "message": str(e)}) + "\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+@app.route('/api/similar-words', methods=['POST'])
+def find_similar_words():
+    data = request.json
+    word = data['word']
+    dataset = data['dataset']
+    topn = int(data.get('topn', 10))
+    
+    if not processors.get(dataset):
+        return jsonify({"error": "Model not trained yet"}), 400
+        
+    similar_words = processors[dataset].find_similar_words(word, topn)
+    return jsonify({"results": similar_words})
+
+@app.route('/api/suggest-words', methods=['POST'])
+def suggest_words():
+    data = request.json
+    context = data['context']
+    dataset = data['dataset']
+    topn = int(data.get('topn', 5))
+    
+    if not processors.get(dataset):
+        return jsonify({"error": "Model not trained yet"}), 400
+        
+    suggestions = processors[dataset].suggest_words(context, topn)
+    return jsonify({"results": suggestions})
+
+@app.route('/api/plot/<plot_type>', methods=['POST'])
+def get_plot(plot_type):
+    data = request.json
+    dataset = data['dataset']
+    
+    if not processors.get(dataset):
+        return jsonify({"error": "Model not trained yet"}), 400
+        
+    # Get figure size based on option
+    figure_sizes = {
+        'small': (10, 8),
+        'medium': (15, 12),
+        'large': (20, 16)
+    }
+    figsize = figure_sizes.get(data.get('figure_size', 'medium'), (15, 12))
+    
+    visualizer = VectorVisualizer(processors[dataset])
+    advanced_visualizer = AdvancedVisualizer(processors[dataset])
+    
+    # try:
+        
+    # Close any existing plots if they exist
+    # plt.close('all')
+    
+    if plot_type == 'vector-space':
+        plt = visualizer.plot_vector_space(
+            n_words=int(data.get('n_words', 100)),
+            method=data.get('method', 'tsne'),
+            figsize=figsize
+        )
+    elif plot_type == 'word-neighborhood':
+        plt = visualizer.plot_word_neighborhood(
+            data['word'],
+            n_neighbors=int(data.get('n_neighbors', 10)),
+            figsize=figsize
+        )
+    elif plot_type == 'word-clusters':
+        plt = advanced_visualizer.plot_word_clusters(
+            n_words=int(data.get('n_words', 100)),
+            n_clusters=int(data.get('n_clusters', 5)),
+            method=data.get('method', 'umap'),
+            interactive=False,
+            min_freq=int(data.get('min_freq', 5)),
+            font_size=data.get('font_size', 12),
+        )
+    
+    # Adjust font size globally
+    plt.rcParams.update({'font.size': data.get('font_size', 12)})
+    
+    # Convert plot to base64 image
+    import io
+    import base64
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=300)
+    buf.seek(0)
+    img_base64 = base64.b64encode(buf.getvalue()).decode()
+    plt.close()
+    
+    return jsonify({"image": img_base64})
+        
+    # except Exception as e:
+    #     return jsonify({"error": str(e)}), 400
+    
 # Load Chinese stop words 
 with open(os.path.join(root_path, 'chinese_stop_words.txt'), 'r', encoding='utf-8') as f:
     chinese_stop_words = set(f.read().splitlines())
@@ -319,13 +475,14 @@ def process_file(file):
             non_ascii_word_count = count_non_ascii_words(abstract)
             abstract_keyword_frequency = Counter(tokens)
             # Add to inverted index
+            # set the index[key][token][filename] = count of token in the abstract
             for position, token in enumerate(tokens):                
                 if token not in porterIndex[key]:
                     porterIndex[key][token] = {}
                 if filename not in porterIndex[key][token]:
-                    porterIndex[key][token][filename] = []
-                if position not in porterIndex[key][token][filename]:
-                    porterIndex[key][token][filename].append(position)
+                    porterIndex[key][token][filename] = 1
+                else:
+                    porterIndex[key][token][filename] += 1
 
             # nonPorterIndex
             tokens, _ = tokenize_and_stem(abstract, False)
@@ -334,9 +491,9 @@ def process_file(file):
                 if token not in nonPorterIndex[key]:
                     nonPorterIndex[key][token] = {}
                 if filename not in nonPorterIndex[key][token]:
-                    nonPorterIndex[key][token][filename] = []
-                if position not in nonPorterIndex[key][token][filename]:
-                    nonPorterIndex[key][token][filename].append(position)
+                    nonPorterIndex[key][token][filename] = 1
+                else:                 
+                    nonPorterIndex[key][token][filename] += 1
         elif key == 'inverted_index_title': 
             # Process the content
             tokens, _ = tokenize_and_stem(title)
@@ -345,9 +502,9 @@ def process_file(file):
                 if token not in porterIndex[key]:
                     porterIndex[key][token] = {}
                 if filename not in porterIndex[key][token]:
-                    porterIndex[key][token][filename] = []
-                if position not in porterIndex[key][token][filename]:
-                    porterIndex[key][token][filename].append(position)
+                    porterIndex[key][token][filename] = 1
+                else:
+                    porterIndex[key][token][filename] += 1
             # nonPorterIndex
             tokens, _ = tokenize_and_stem(title, False)
             title_keyword_frequency_non_porter = Counter(tokens)
@@ -355,9 +512,9 @@ def process_file(file):
                 if token not in nonPorterIndex[key]:
                     nonPorterIndex[key][token] = {}
                 if filename not in nonPorterIndex[key][token]:
-                    nonPorterIndex[key][token][filename] = []
-                if position not in nonPorterIndex[key][token][filename]:
-                    nonPorterIndex[key][token][filename].append(position)
+                    nonPorterIndex[key][token][filename] = 1
+                else:              
+                    nonPorterIndex[key][token][filename] += 1
         elif key == 'inverted_index_year':
             if year not in porterIndex[key]:
                 porterIndex[key][year] = []
@@ -578,8 +735,8 @@ def process_query_terms(query, results, indexKey=indexKeys[0], mode='AND', porte
                     # if len(results) >= 1000:
                     #     break
                     # print('doc_id:', doc_id, 'token:', token, 'score:', len(index[indexKey][token][doc_id]))
-                    results[doc_id]['score'] += len(index[indexKey][token][doc_id])
-                    results[doc_id]['matches'][token] = len(index[indexKey][token][doc_id])
+                    results[doc_id]['score'] += index[indexKey][token][doc_id]
+                    results[doc_id]['matches'][token] = index[indexKey][token][doc_id]
             elif mode == 'AND':
                 if len(matching_docs) == 0:
                     matching_docs = set(index[indexKey][token].keys())
@@ -598,8 +755,8 @@ def process_query_terms(query, results, indexKey=indexKeys[0], mode='AND', porte
         for doc_id in matching_docs:
             for token in query_tokens:
                 if token in index[indexKey] and doc_id in index[indexKey][token]:
-                    results[doc_id]['score'] += len(index[indexKey][token][doc_id])
-                    results[doc_id]['matches'][token] = len(index[indexKey][token][doc_id])
+                    results[doc_id]['score'] += index[indexKey][token][doc_id]
+                    results[doc_id]['matches'][token] = index[indexKey][token][doc_id]
     
     return query_tokens
 
