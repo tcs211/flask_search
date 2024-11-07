@@ -4,19 +4,15 @@ from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import seaborn as sns
-from nltk.tokenize import word_tokenize, sent_tokenize
-import nltk
-from collections import Counter
+from nltk.tokenize import word_tokenize
 import pandas as pd
 import xml.etree.ElementTree as ET
 import os
 import re
 from tqdm import tqdm
-from typing import List, Dict, Tuple, Optional
 import json
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-import nltk
 from adjustText import adjust_text
 from sklearn.decomposition import PCA
 import plotly.express as px
@@ -24,10 +20,6 @@ import plotly.graph_objects as go
 from umap import UMAP
 import networkx as nx
 import pandas as pd
-
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
 
 def parseXML(xmlfile):
     tree = ET.parse(xmlfile)
