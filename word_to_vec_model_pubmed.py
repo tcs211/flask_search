@@ -270,6 +270,9 @@ class VectorVisualizer:
         # Reduce dimensionality
         if method.lower() == 'tsne':
             reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, n_words-1))
+
+        elif method.lower() == 'umap':
+            reducer = UMAP(n_components=2, random_state=42, n_neighbors=min(30, n_words-1))
         else:
             reducer = PCA(n_components=2)
             
@@ -365,9 +368,9 @@ class VectorVisualizer:
         similarities = [1.0] + [sim for _, sim in similar_words]  # Include similarity scores
         vectors = np.array([self.processor.model.wv[word] for word in words])
         
-        # Reduce to 2D using PCA
-        pca = PCA(n_components=2)
-        vectors_2d = pca.fit_transform(vectors)
+        # Reduce to 2D using t-SNE
+        tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, n_neighbors-1))
+        vectors_2d = tsne.fit_transform(vectors)
         
         # Create plot with white background
         plt.figure(figsize=figsize, facecolor='white')
@@ -406,8 +409,8 @@ class VectorVisualizer:
         # Add title and labels with improved styling
         plt.title(f'Word Neighborhood: {target_word}',
                  pad=20, size=14, weight='bold')
-        plt.xlabel('PCA Dimension 1', size=12)
-        plt.ylabel('PCA Dimension 2', size=12)
+        plt.xlabel('t-SNE Dimension 1', size=12)
+        plt.ylabel('t-SNE Dimension 2', size=12)
         
         # Add grid with improved styling
         plt.grid(True, alpha=0.2, linestyle='--')
@@ -622,6 +625,8 @@ class AdvancedVisualizer:
                 metric='cosine',
                 random_state=42
             )
+        if method.lower() == 'pca':
+            reducer = PCA(n_components=2)
         else:
             reducer = TSNE(
                 n_components=2,
