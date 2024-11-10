@@ -147,6 +147,28 @@ def suggest_words():
     suggestions = processors[dataset].suggest_words(context, topn)
     return jsonify({"results": suggestions})
 
+@app.route('/api/similar-documents', methods=['POST'])
+def similar_documents():
+    data = request.get_json()
+    query = data.get('query', '')
+    top_n = data.get('top_n', 5)    
+    dataset = data['dataset']    
+    
+    if not processors.get(dataset):
+        return jsonify({"error": "Model not trained yet"}), 400
+    # 獲取相似文檔
+    results = processors[dataset].query_similar_documents(query, top_n=top_n)
+    
+    # 準備返回結果
+    documents = []
+    for doc, score in results:
+        documents.append({
+            'title': doc['title'],
+            'abstract': doc['abstract'],
+            'score': float(score)
+        })
+    return jsonify({'documents': documents})
+
 @app.route('/api/plot/<plot_type>', methods=['POST'])
 def get_plot(plot_type):
     data = request.json
@@ -369,11 +391,11 @@ def process_file(file):
     filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
-    
     # Read file content
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
         # remove >2 spaces to 1 space
+        # print ('content:', content)
         content = re.sub(r'\s{2,}', ' ', content)
     
     # Process based on file type
@@ -394,71 +416,68 @@ def process_file(file):
             
             extract_text(json_content)
             content = ' '.join(text_fields)
+
+            return [process_content('', content, [], '', filename)]
         except json.JSONDecodeError:
             print('Error parsing JSON, treating as plain text')
     elif file.content_type == 'application/xml' or filename.lower().endswith('.xml'):
-        try:
-            root = ET.fromstring(content)
+        print ('type:xml')
+        print ('content:', content[:100])
+        # try:
+        root = ET.fromstring(content)
+        # print ('root lens'+len(root.findall('.//PubmedArticle')))
+        # print ('root:', root)
+        files = []
+        for article in root.findall('.//PubmedArticle'):
+            # print ('article:', article)
+            pmid = article.find('.//PMID').text
+            title = article.find('.//ArticleTitle')
+            abstractAll = article.findall('.//Abstract/AbstractText')
+            abstract = [ET.tostring(abstract, method='text', encoding='unicode') for abstract in abstractAll]
+            abstract = " ".join(abstract)
+            
+            abstract = re.sub(r'<.*?>', ' ', abstract)
+            authors = article.findall('.//Author')
+            authorsAll = []
+            for author in authors:
+                if author.find('LastName') is not None and author.find('ForeName') is not None:
+                    name = author.find('LastName').text + ' ' + author.find('ForeName').text
+                    if name and name not in authorsAll:
+                        authorsAll.append(name)
+            # year [Year, Month, Day]
+            yearRoot = article.find('.//ArticleDate')
+            if yearRoot is not None:
+                year = yearRoot.find('Year').text + '-' + yearRoot.find('Month').text + '-' + yearRoot.find('Day').text
+            else:
+                year = None
+            pmid = pmid if pmid is not None else ""
+            title_text = title.text if title is not None else ""
+            abstract_text = abstract if abstract is not None else ""
+            authors = authorsAll if authorsAll else ""
+            year = year if year is not None else ""
 
-            # Extract title and abstract
-            title = ''
-            abstract = ''
-            authors = []
-            year = ''
-            # find the title or Title element
-            tags = ['ArticleTitle', 'AbstractText', 'Author', 'ArticleDate']
-
-            for tag in tags:
-                elems = root.findall('.//' + tag)
-                if len(elems) > 0:
-                    if tag == 'ArticleTitle':
-                        
-                        title = [elem.text.strip() if elem.text is not None else elem.text for elem in elems]
-                        title = ' '.join(title)
-                    elif tag == 'AbstractText':
-                        abstract = [ET.tostring(elem, encoding='utf-8', method='text').decode('utf-8')
-                                     for elem in elems]
-                        abstract = ' '.join(abstract)
-                        abstract = re.sub(r'<.*?>', ' ', abstract)
-                    elif tag == 'Author':
-                        # <Author ValidYN="Y">
-                        # <LastName>Vasileiou</LastName>
-                        # <ForeName>Georgia</ForeName>
-                        # <Initials>G</Initials>
-                        # <AffiliationInfo>
-                        # <Affiliation>Institute of Human Genetics, Friedrich-Alexander-Universität Erlangen-Nürnberg (FAU), Schwabachanlage 10, 91054, Erlangen, Germany.</Affiliation>
-                        # </AffiliationInfo>
-                        # </Author>
-                        for elem in elems:
-                            a = ""
-                            nameKeys = ['LastName', 'ForeName', 'Initials']
-                            for nameKey in nameKeys:
-                                nameElem = elem.find(nameKey)
-                                if nameElem is not None:
-                                    a += nameElem.text.strip() + " "    
-                            authors.append(a[:-1])
-
-                    elif tag == 'ArticleDate':
-#                         <Year>2018</Year>
-                    # <Month>09</Month>
-                    # <Day>26</Day>
-                        for elem in elems:
-                            dateKeys = ['Year', 'Month', 'Day']
-                            for dateKey in dateKeys:
-                                dateElem = elem.find(dateKey)
-                                if dateElem is not None:
-                                    year += dateElem.text.strip() + "-"
-                        year = year[:-1]
-
+            print ('pmid:', pmid, 'title:', title_text, 'abstract:', abstract_text, 'authors:', authors, 'year:', year)
+            if title_text and abstract_text:
+                xmlFilename = '{}.xml'.format(pmid)
+                files.append(process_content(title_text, abstract_text, authors, year, xmlFilename))
+                # save article to xml file
+                with open('{}/{}'.format(app.config['UPLOAD_FOLDER'], xmlFilename), 'w', encoding='utf-8') as f:
+                    f.write(ET.tostring(article, encoding='unicode'))
+        # delete the original file
+        os.remove(filepath)
+        print ('files:', len(files))
+        return files
                 
-        except ET.ParseError:
-            print('Error parsing XML, treating as plain text')
+        # except ET.ParseError:
+        #     print('Error parsing XML, treating as plain text')
     elif file.content_type == 'text/plain' or filename.lower().endswith('.txt'):
         # Plain text file
         abstract = content.encode('utf-8', 'ignore').decode('utf-8')
+    
+        return [process_content('', abstract, [], '', filename)]
 
     
-    
+def process_content(title, abstract, authors, year, filename):
     for key in indexKeys:
         if key not in porterIndex:
             porterIndex[key] = {}
@@ -775,6 +794,7 @@ def home():
 
 @app.route('/upload', methods=['POST'])
 def upload_files():
+    print ('upload_files')
     if 'files' not in request.files:
         return jsonify({'error': '沒有上傳檔案'}), 400
     
@@ -787,8 +807,9 @@ def upload_files():
     
     for file in files:
         if file and file.filename.split('.')[-1].lower() in accepted_types:
-            file_info = process_file(file)
-            results.append(file_info)
+            files = process_file(file)
+            for file_info in files:
+                results.append(file_info)
         else:
             return jsonify({'error': f'不支援的檔案格式: {file.filename}'}), 400
     save_index()
@@ -798,6 +819,7 @@ BATCH_SIZE = 100
 ACCEPTED_TYPES = ['json', 'xml', 'txt']
 @app.route('/upload_batch', methods=['POST'])
 def upload_batch():
+    print ('upload_batch')
     if 'files' not in request.files:
         return jsonify({'error': '沒有上傳檔案'}), 400
     
@@ -818,11 +840,12 @@ def process_batch(batch):
     results = []
     for file in batch:
         if file and file.filename.split('.')[-1].lower() in ACCEPTED_TYPES:
-            try:
-                file_info = process_file(file)
-                results.append(file_info)
-            except Exception as e:
-                results.append({'error': f'處理檔案時發生錯誤: {file.filename}', 'details': str(e)})
+            # try:
+                file_infos = process_file(file)
+                for file_info in file_infos:
+                    results.append(file_info)
+            # except Exception as e:
+            #     results.append({'error': f'處理檔案時發生錯誤: {file.filename}', 'details': str(e)})
         else:
             results.append({'error': f'不支援的檔案格式: {file.filename}'})
     save_index()

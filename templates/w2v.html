@@ -92,7 +92,7 @@
                                class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
                         <button @click="findSimilarWords" 
                                 class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md">
-                            尋詢 
+                            查詢 
                         </button>
                     </div>
                 </div>
@@ -145,7 +145,35 @@
                         </div>
                     </div>
                 </div>
+                <!-- 關鍵字查找文檔功能 -->
+                <h2 class="text-xl font-semibold mb-4">關鍵字查找文檔</h2>
+                <div class="mb-6">
+                    <div class="flex space-x-2">
+                        <input type="text" v-model="documentQuery" placeholder="輸入關鍵字" 
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
+                        <button @click="findSimilarDocuments" 
+                                class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md">
+                            查詢
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 顯示查詢結果 -->
+                <div v-if="similarDocuments.length" class="mb-6">
+                    <h3 class="text-lg font-medium mb-2">相關文檔
+                        <!-- clear button -->
+                        <button @click="similarDocuments = []" class="text-sm text-gray-500 ml-2">清除</button>
+                    </h3>
+                    <div class="bg-gray-50 p-4 rounded-md">
+                        <div v-for="(doc, index) in similarDocuments" :key="index" class="mb-4">
+                            <h4 class="text-md font-semibold">${ doc.title }</h4>
+                            <p class="text-gray-700">${ doc.abstract }</p>
+                            <p class="text-gray-500">相似度得分：${ doc.score.toFixed(4) }</p>
+                        </div>
+                    </div>
+                </div>
             </div>
+
         </div>
 
         <!-- Visualization Section -->
@@ -341,6 +369,8 @@
                 newContextWord: '',
                 contextWords: [],
                 suggestedWords: [],
+                documentQuery: '',
+                similarDocuments: [],
                 plotImage: null,
                 currentTab: 'vector-space',
                 tabs: [
@@ -500,6 +530,28 @@
                         this.isGeneratingPlot = false;
                         alert('Error generating plot: ' + error.response?.data?.error || error.message);
                     }
+                },
+                // 其他方法...
+                findSimilarDocuments() {
+                    if (!this.documentQuery) return;
+                    fetch('/api/similar-documents', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            dataset: this.selectedDataset,
+                            query: this.documentQuery,
+                            top_n: 5,
+                        }),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        this.similarDocuments = data.documents;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
                 },
             }
         });
