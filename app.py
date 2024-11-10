@@ -421,8 +421,8 @@ def process_file(file):
         except json.JSONDecodeError:
             print('Error parsing JSON, treating as plain text')
     elif file.content_type == 'application/xml' or filename.lower().endswith('.xml'):
-        print ('type:xml')
-        print ('content:', content[:100])
+        # print ('type:xml')
+        # print ('content:', content[:100])
         # try:
         root = ET.fromstring(content)
         # print ('root lens'+len(root.findall('.//PubmedArticle')))
@@ -456,7 +456,7 @@ def process_file(file):
             authors = authorsAll if authorsAll else ""
             year = year if year is not None else ""
 
-            print ('pmid:', pmid, 'title:', title_text, 'abstract:', abstract_text, 'authors:', authors, 'year:', year)
+            # print ('pmid:', pmid, 'title:', title_text, 'abstract:', abstract_text, 'authors:', authors, 'year:', year)
             if title_text and abstract_text:
                 xmlFilename = '{}.xml'.format(pmid)
                 files.append(process_content(title_text, abstract_text, authors, year, xmlFilename))
