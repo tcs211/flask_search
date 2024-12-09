@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件分析器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app" v-cloak class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">文件分析器</h1>
+            <p class="text-gray-600">比較TF-IDF、Word2Vec、Transformer等方法的關鍵句分析</p>
+            <p class="text-gray-600">成功大學人工智慧資訊擷取技術課程作業</p>
+        </header>
+
+        <!-- Input Methods Tabs -->
+        <div class="mb-8">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex" aria-label="Tabs">
+                    <button 
+                        @click="activeTab = 'sample'" 
+                        :class="[
+                            activeTab === 'sample'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                            'w-1/4 py-4 px-1 text-center border-b-2 font-medium'
+                        ]"
+                    >
+                        PubMed文件
+                    </button>
+                    <button 
+                        @click="activeTab = 'input'"
+                        :class="[
+                            activeTab === 'input'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                            'w-1/4 py-4 px-1 text-center border-b-2 font-medium'
+                        ]"
+                    >
+                        輸入自訂文件
+                    </button>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Sample Documents Section -->
+        <div v-if="activeTab === 'sample'" class="mb-8">
+            <div class="max-w-xl">
+                <button @click="loadDefaultData" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    載入PubMed文件: alzheimer lecanemab 2024 (197篇)
+                </button>
+            </div>
+            
+            <!-- Document Selection -->
+            <div v-if="documents.length > 0" class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    選擇文件</label>
+                <select v-model="selectedDocument" @change="analyzeDocument"
+                        class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 rounded-md">
+                    <option v-for="doc in documents" :key="doc.pmid" :value="doc">
+                        ${ doc.title }
+                    </option>
+                </select>
+            </div>
+            
+        </div>
+
+        <!-- Custom Input Section -->
+        <div v-if="activeTab === 'input'" class="mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">參考文章</h2>
+                <p>
+                    <a href="https://www.gutenberg.org/files/161/161-h/161-h.htm" target="_blank" class="text-blue-500 underline">Sense and Sensibility</a>
+                </p>
+                <p>
+                    <a href="https://www.gutenberg.org/cache/epub/11/pg11-images.html" target="_blank" class="text-blue-500 underline">Alice's Adventures in Wonderland</a>
+                </p>
+                <p>
+                    <a href="https://americanliterature.com/childrens-stories/little-red-riding-hood" target="_blank" class="text-blue-500 underline">Little Red Riding Hood</a>
+                </p>
+                
+                <textarea
+                    v-model="customText"
+                    rows="10"
+                    class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="輸入或貼上文件"
+                ></textarea>
+                <div class="mt-4 flex justify-between items-center">
+                    <button 
+                        @click="analyzeCustomText"
+                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                        :disabled="!customText.trim()"
+                    >
+                        分析文件
+                    </button>
+                    <span class="text-sm text-gray-500">
+                        ${ customText.length } characters
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div v-if="loading" class="flex justify-center items-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <span class="ml-2">分析中...</span>
+        </div>
+        <div v-if="results && !loading" class="mt-4">
+            <!-- a radio button group -->
+            <div class="flex items-center mb-4">
+                <input type="radio" id="tfidf" name="highlight-abstract-method" value="tfidf" v-model="highlightAbstractModel" class="mr-2">
+                <label for="tfidf" class="text-sm text-gray-600">TF-IDF</label>
+                <input type="radio" id="word2vec" name="highlight-abstract-method" value="word2vec" v-model="highlightAbstractModel" class="ml-4 mr-2">
+                <label for="word2vec" class="text-sm text-gray-600">Word2Vec</label>
+                <input type="radio" id="transformer" name="highlight-abstract-method" value="transformer" v-model="highlightAbstractModel" class="ml-4 mr-2">
+                <label for="transformer" class="text-sm text-gray-600">Transformer</label>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">內文</h2>
+                <p class="text-gray-600 text-sm" v-html="abstractHtml"></p>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div v-if="results && !loading" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- TF-IDF Results -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">TF-IDF排名</h2>
+                <p class="text-gray-600 mb-4"> sklearn.feature_extraction.text.TfidfVectorizer
+                <div class="space-y-4">
+                    <div v-for="(item, index) in results.rankings.tfidf" :key="index"
+                         class="p-4 rounded-lg" :class="getItemBackground(index)">
+                        <div class="flex justify-between items-start">
+                            <span class="font-medium text-gray-700">Rank ${ index + 1 }</span>
+                            <span class="text-sm text-gray-500">Score: ${ item.score.toFixed(4) }</span>
+                        </div>
+                        <p class="mt-2 text-gray-600">${ item.text }</p>
+                        <span class="mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              :class="getSectionClass(item.section)">
+                            ${ item.section }
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comparison Results -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">比較方法</h2>
+                    <select v-model="selectedMethod" @change="updateComparisonView"
+                            class="pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 rounded-md">
+                        <option value="word2vec">Word2Vec</option>
+                        <!-- <option value="textrank">TextRank</option> -->
+                        <option value="transformer">Transformer</option>
+                    </select>
+                </div>
+                
+                <p class="text-gray-600 mb-4" v-if="selectedMethod === 'word2vec'">Word2Vec: Gensim Word2Vec</p>
+                <p class="text-gray-600 mb-4" v-else>Transformer: https://huggingface.co/sentence-transformers</p>
+                <div class="space-y-4">
+                    <div v-for="(item, index) in currentComparisonResults" :key="index"
+                         class="p-4 rounded-lg" :class="getItemBackground(index)">
+                        <div class="flex justify-between items-start">
+                            <span class="font-medium text-gray-700">Rank ${ index + 1 }</span>
+                            <span class="text-sm text-gray-500">Score: ${ item.score.toFixed(4) }</span>
+                        </div>
+                        <p class="mt-2 text-gray-600">${ item.text }</p>
+                        <span class="mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              :class="getSectionClass(item.section)">
+                            ${ item.section }
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Visualizations -->
+        <div v-show="results && !loading" class="mt-8 grid grid-cols-1 gap-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">向量空間視覺化</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div id="tfidf-plot"></div>
+                    <div id="comparison-plot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="bg-gray-200 text-center text-gray-600 py-4 px-3">
+        <div class="inline-block mr-2">© 2024 Chin Sung Tung</div>
+        <div class="inline-block mr-2">P77121082</div>
+        <div class="inline-block">成功大學AI碩士在職專班</div>
+    </footer>
+
+    <script>
+        var app = new Vue({
+            el: '#app',
+            delimiters: ['${', '}'],
+            data: {
+                abstractHtml: '',
+                highlightAbstractModel: 'tfidf',
+                documents: [],
+                selectedDocument: null,
+                results: null,
+                selectedMethod: 'word2vec',
+                activeTab: 'sample',
+                customText: '',
+                loading: false,
+                currentComparisonResults: []
+            },
+            watch: {
+                highlightAbstractModel() {
+                    this.abstractHtml = this.selectedAbstractHtml();
+                },
+                selectedMethod() {
+                    this.updateComparisonView();
+                }
+            },
+            
+            methods: {
+                selectedAbstractHtml() {
+                    console.log('set abstractHtml')
+                    var abstract = ''
+                    if (this.selectedDocument || (this.activeTab === 'input' && this.customText)) {
+
+                        if (this.activeTab === 'sample') {
+                            abstract = this.selectedDocument.abstract.map(x=>x.text).join(' ');
+                        } else { 
+                            abstract = this.customText;
+                        } 
+                        
+                        var rank1Text = this.results.rankings[this.highlightAbstractModel][0].text;
+                        var rank2Text = this.results.rankings[this.highlightAbstractModel][1].text;
+                        var rank3Text = this.results.rankings[this.highlightAbstractModel][2].text;
+
+                        abstract = abstract.replace(rank1Text, `<span style="color: #8B0000">${rank1Text}</span>`);
+                        abstract = abstract.replace(rank2Text, `<span style="color: #CD5C5C">${rank2Text}</span>`);
+                        abstract = abstract.replace(rank3Text, `<span style="color: #DC143C">${rank3Text}</span>`);
+                        
+
+                        
+                    } else {
+                        abstract = '';
+                    }
+                    return abstract;
+                },
+                loadDefaultData() {
+                    this.loading = true;
+                    axios.post('/api/load-documents')
+                        .then(response => {
+                            this.documents = response.data.documents;
+                            this.selectedDocument = this.documents[0];
+                            this.analyzeDocument();
+                        })
+                        .catch(error => {
+                            console.error('Error loading default data:', error);
+                            alert('Error loading sample documents');
+                        })
+                        .finally(() => {
+                            this.loading = false;
+                        });
+                },
+
+                analyzeDocument() {
+                    if (!this.selectedDocument) return;
+                    this.loading = true;
+                    var app0 = this;
+                    
+                    axios.post('/api/analyze', {
+                        document: this.selectedDocument,
+                        type: 'sample'
+                    })
+                        .then(response => {
+                            app0.results = response.data;
+                            app0.updatePlots();
+                            app0.abstractHtml = app0.selectedAbstractHtml();
+                        })
+                        .catch(error => {
+                            console.error('Error analyzing document:', error);
+                            alert('Error analyzing document');
+                        })
+                        .finally(() => {
+                            this.loading = false;
+                        });
+                },
+
+                analyzeCustomText() {
+                    if (!this.customText.trim()) return;
+                    this.loading = true;
+                    var app0 = this;
+
+                    axios.post('/api/analyze', {
+                        text: this.customText,
+                        type: 'custom'
+                    })
+                        .then(response => {
+                            app0.results = response.data;
+                            app0.updatePlots();
+                            
+                            app0.abstractHtml = app0.selectedAbstractHtml();
+                            app0.currentComparisonResults =  app0.results.rankings[app0.selectedMethod] || [];
+                        })
+                        .catch(error => {
+                            console.error('Error analyzing text:', error);
+                            alert('Error analyzing text');
+                        })
+                        .finally(() => {
+                            this.loading = false;
+                        });
+                },
+
+                updateComparisonView() {
+                    this.updatePlots();
+                    this.currentComparisonResults =  this.results.rankings[this.selectedMethod] || [];
+                },
+
+                getItemBackground(index) {
+                    const backgrounds = [
+                        'bg-yellow-50',
+                        'bg-green-50',
+                        'bg-blue-50',
+                        'bg-gray-50'
+                    ];
+                    return backgrounds[index] || 'bg-gray-50';
+                },
+
+                getSectionClass(section) {
+                    const classes = {
+                        'TITLE': 'bg-red-100 text-red-800',
+                        'BACKGROUND': 'bg-blue-100 text-blue-800',
+                        'METHODS': 'bg-green-100 text-green-800',
+                        'RESULTS': 'bg-purple-100 text-purple-800',
+                        'CONCLUSION': 'bg-yellow-100 text-yellow-800',
+                        'OTHER': 'bg-gray-100 text-gray-800'
+                    };
+                    return classes[section] || classes['OTHER'];
+                },
+
+                updatePlots() {
+                    if (!this.results) return;
+
+                    const tfidfData = this.results.visualization.tfidf;
+                    const comparisonData = this.results.visualization[this.selectedMethod];
+
+                    // TF-IDF Plot
+                    Plotly.newPlot('tfidf-plot', [{
+                        x: tfidfData.x,
+                        y: tfidfData.y,
+                        mode: 'markers+text',
+                        type: 'scatter',
+                        text: tfidfData.labels,
+                        textposition: 'top center',
+                        marker: {
+                            size: 10,
+                            color: tfidfData.colors
+                        }
+                    }], {
+                        title: 'TF-IDF Vector Space',
+                        showlegend: false,
+                        height: 400
+                    });
+
+                    // Comparison Plot
+                    Plotly.newPlot('comparison-plot', [{
+                        x: comparisonData.x,
+                        y: comparisonData.y,
+                        mode: 'markers+text',
+                        type: 'scatter',
+                        text: comparisonData.labels,
+                        textposition: 'top center',
+                        marker: {
+                            size: 10,
+                            color: comparisonData.colors
+                        }
+                    }], {
+                        title: `${this.selectedMethod.toUpperCase()} Vector Space`,
+                        showlegend: false,
+                        height: 400
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>

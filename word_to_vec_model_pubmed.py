@@ -21,7 +21,7 @@ from umap import UMAP
 import networkx as nx
 import pandas as pd
 
-def parseXML(xmlfile):
+def parseXML(xmlfile, sectionLabel=False):
     tree = ET.parse(xmlfile)
     root = tree.getroot()
     docs = []
@@ -29,10 +29,21 @@ def parseXML(xmlfile):
         pmid = article.find('.//PMID').text
         title = article.find('.//ArticleTitle')
         abstractAll = article.findall('.//Abstract/AbstractText')
-        abstract = [ET.tostring(abstract, method='text', encoding='unicode') for abstract in abstractAll]
-        abstract = " ".join(abstract)
-        
-        abstract = re.sub(r'<.*?>', ' ', abstract)
+        if sectionLabel:
+            abstract = []
+            for section in abstractAll:
+                label = section.get('Label', 'OTHER')
+                text = section.text if section.text else ""
+                if text:
+                    abstract.append({
+                        'label': label,
+                        'text': text
+                    })
+        else:
+            abstract = [ET.tostring(abstract, method='text', encoding='unicode') for abstract in abstractAll]
+            abstract = " ".join(abstract)
+            
+            abstract = re.sub(r'<.*?>', ' ', abstract)
 
         pmid = pmid if pmid is not None else ""
         title_text = title.text if title is not None else ""
@@ -42,13 +53,13 @@ def parseXML(xmlfile):
     return docs
 
 
-def load_documents(folder):
+def load_documents(folder, sectionLabel=False):
     documents=[]
     files = os.listdir(folder)
     for file in tqdm(files):
         if file.endswith('.xml'):
             fullpath = os.path.join(folder, file)
-            documents.extend(parseXML(fullpath))
+            documents.extend(parseXML(fullpath, sectionLabel))
     return documents
 
 

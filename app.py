@@ -23,6 +23,9 @@ import matplotlib.pyplot as plt
 from flask import Response
 from word_to_vec_model_pubmed import load_documents, PubmedProcessor, VectorVisualizer, AdvancedVisualizer
 
+
+from rankers import TFIDFRanker, Word2VecRanker,  TransformerRanker
+
 # 起始app
 app = Flask(__name__, static_folder='javascript')
 app.config['MAX_CONTENT_LENGTH'] = 1000 * 1024 * 1024  # 1000 MB limit
@@ -33,7 +36,8 @@ print(root_path)
 # Global variables to store processors for different datasets
 processors = {
     'caregiver': None,
-    'psychosis': None
+    'psychosis': None,
+    'Lecanemab': None
 }
 
 
@@ -72,6 +76,231 @@ lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
 english_stop_words = set(stopwords.words('english'))
 
+
+
+# Initialize rankers
+
+# Initialize rankers
+# Initialize rankers
+tfidf_ranker = TFIDFRanker()
+word2vec_ranker = Word2VecRanker()
+# textrank_ranker = GensimTextRankRanker()
+transformer_ranker = TransformerRanker()
+
+@app.route('/qsentence')
+def qsentence():
+    """Render the main application page"""
+    return render_template('qsentence.html')
+
+@app.route('/api/load-documents', methods=['POST'])
+def qsentence_load_documents():
+    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pubmed_ad_Lecanemab')
+    try:
+        documents = load_documents(file_path, sectionLabel=True)
+        return jsonify({
+            'status': 'success',
+            'documents': documents,
+            'count': len(documents)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        })
+
+def load_documents(file_path, sectionLabel=True):
+    documents = []
+    for filename in os.listdir(file_path):
+        if filename.endswith('.xml'):
+            with open(os.path.join(file_path, filename), 'r', encoding='utf-8') as f:
+                tree = ET.parse(f)
+                root = tree.getroot()
+                
+                for article in root.findall('.//PubmedArticle'):
+                    pmid = article.find('.//PMID').text
+                    title = article.find('.//ArticleTitle').text
+                    
+                    abstract_sections = []
+                    for abstract in article.findall('.//Abstract/AbstractText'):
+                        label = abstract.get('Label', 'OTHER')
+                        text = abstract.text or ''
+                        abstract_sections.append({
+                            'label': label,
+                            'text': text
+                        })
+                    
+                    documents.append({
+                        'pmid': pmid,
+                        'title': title,
+                        'abstract': abstract_sections
+                    })
+    
+    return documents
+
+@app.route('/api/analyze', methods=['POST'])
+def analyze_document():
+    try:
+        data = request.json
+        input_type = data.get('type', 'sample')
+        
+        if input_type == 'sample':
+            document = data.get('document')
+            if not document:
+                return jsonify({'error': 'No document provided'}), 400
+                
+            # Extract sentences from sample document
+            sentences = []
+            if document.get('title'):
+                sentences.append({
+                    'text': document['title'], 
+                    'section': 'TITLE'
+                })        
+            
+            for section in document.get('abstract', []):
+                section_sentences = sent_tokenize(section['text'])
+                for sent in section_sentences:
+                    sentences.append({
+                        'text': sent,
+                        'section': section['label']
+                    })
+                    
+            doc_info = {
+                'title': document.get('title', ''),
+                'pmid': document.get('pmid', ''),
+                'type': 'sample'
+            }
+        else:
+            # Handle custom text input
+            text = data.get('text', '').strip()
+            if not text:
+                return jsonify({'error': 'No text provided'}), 400
+            
+            # Try to identify sections based on common headers
+            lines = text.split('\n')
+            current_section = 'OTHER'
+            processed_text = ''
+            
+            section_keywords = {
+                'BACKGROUND': ['background', 'introduction'],
+                'METHODS': ['method', 'methodology', 'materials'],
+                'RESULTS': ['result', 'findings'],
+                'CONCLUSION': ['conclusion', 'summary', 'discussion'],
+                'TITLE': ['title']
+            }
+            
+            sentences = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Check if line is a section header
+                lower_line = line.lower()
+                found_section = False
+                for section, keywords in section_keywords.items():
+                    if any(keyword in lower_line for keyword in keywords):
+                        current_section = section
+                        found_section = True
+                        break
+                
+                if not found_section:
+                    # Process line as content
+                    line_sentences = sent_tokenize(line)
+                    for sent in line_sentences:
+                        sentences.append({
+                            'text': sent,
+                            'section': current_section
+                        })
+            
+            doc_info = {
+                'title': 'Custom Text',
+                'type': 'custom'
+            }
+        
+        # Get plain text sentences
+        texts = [s['text'] for s in sentences]
+        
+        if not texts:
+            return jsonify({'error': 'No sentences found in text'}), 400
+        
+        # Get rankings from all methods
+        tfidf_results = tfidf_ranker.rank_sentences(texts)
+        word2vec_results = word2vec_ranker.rank_sentences(texts)
+        # textrank_results = textrank_ranker.rank_sentences(texts)
+        transformer_results = transformer_ranker.rank_sentences(texts)
+        
+        # Get visualization data
+        tfidf_viz = tfidf_ranker.get_visualization_data(texts)
+        word2vec_viz = word2vec_ranker.get_visualization_data(texts)
+        # textrank_viz = textrank_ranker.get_visualization_data(texts)
+        transformer_viz = transformer_ranker.get_visualization_data(texts)
+        
+        # Helper function to format ranking results
+        def format_rankings(ranking_results):
+            return [
+                {
+                    'text': text,
+                    'score': float(score),
+                    'section': next(s['section'] for s in sentences if s['text'] == text)
+                }
+                for text, score in ranking_results
+            ]
+        
+        # Calculate text statistics
+        text_stats = {
+            'sentence_count': len(sentences),
+            'word_count': sum(len(text.split()) for text in texts),
+            'avg_sentence_length': sum(len(text.split()) for text in texts) / len(texts),
+            'sections': list(set(s['section'] for s in sentences))
+        }
+        
+        # Prepare response
+        response = {
+            'document_info': {
+                **doc_info,
+                **text_stats
+            },
+            'rankings': {
+                'tfidf': format_rankings(tfidf_results),
+                'word2vec': format_rankings(word2vec_results),
+                # 'textrank': format_rankings(textrank_results),
+                'transformer': format_rankings(transformer_results)
+            },
+            'visualization': {
+                'tfidf': tfidf_viz,
+                'word2vec': word2vec_viz,
+                # 'textrank': textrank_viz,
+                'transformer': transformer_viz
+            },
+            'method_info': {
+                'tfidf': {
+                    'name': 'TF-IDF Ranking',
+                    'description': 'Ranks sentences based on term frequency and inverse document frequency.'
+                },
+                'word2vec': {
+                    'name': 'Word2Vec Ranking',
+                    'description': 'Uses word embeddings to capture semantic relationships between sentences.'
+                },
+                # 'textrank': {
+                #     'name': 'TextRank',
+                #     'description': 'Graph-based ranking algorithm similar to PageRank for sentence importance.'
+                # },
+                'transformer': {
+                    'name': 'transformer Ranking',
+                    'description': 'Uses transformer transformer model for contextual understanding of sentences.'
+                }
+            }
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"Error in analyze_document: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+    
 @app.route('/w2v')
 def index():
     return render_template('w2v.html')
@@ -85,7 +314,12 @@ def train_model():
     def generate():
         try:
             # Load documents based on dataset selection
-            folder_path = os.path.join(root_path, 'pubmed_ad_cargiver222324') if dataset == 'caregiver' else os.path.join(root_path, 'pubmed_ad_psychosis')
+            folders = {
+                'caregiver': 'pubmed_ad_cargiver222324',
+                'psychosis': 'pubmed_ad_psychosis',
+                'Lecanemab': 'pubmed_ad_Lecanemab'
+            }
+            folder_path = os.path.join(root_path,  folders[dataset])
             yield json.dumps({"status": "loading", "message": "Loading documents..."}) + "\n"
             
             documents = load_documents(folder_path)
