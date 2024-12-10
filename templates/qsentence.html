@@ -279,7 +279,7 @@
                     })
                         .then(response => {
                             app0.results = response.data;
-                            app0.updatePlots();
+                            app0.updateComparisonView();
                             app0.abstractHtml = app0.selectedAbstractHtml();
                         })
                         .catch(error => {
@@ -302,7 +302,7 @@
                     })
                         .then(response => {
                             app0.results = response.data;
-                            app0.updatePlots();
+                            app0.updateComparisonView();
                             
                             app0.abstractHtml = app0.selectedAbstractHtml();
                             app0.currentComparisonResults =  app0.results.rankings[app0.selectedMethod] || [];
